@@ -86,5 +86,7 @@ The architecture is intentionally measurable. The API reports:
 This is an architecture simulator, not yet a biological fidelity claim. The
 current benchmark shows lower logical energy for OctoCortex. Its capability
 router now reassigns route planning to memory, then perception, when the primary
-planning unit fails. The next milestone is learned capability transfer instead
-of executing the shared reference planner under a new owner.
+planning unit fails. Memory and perception use separate distilled linear-policy
+weights during failover; the primary navigation implementation is not called.
+The next milestone is transfer learning across unseen worlds rather than
+distillation on one fixed map.

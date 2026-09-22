@@ -10,8 +10,8 @@ const MOVES={[ACTION.UP]:[0,-1],[ACTION.DOWN]:[0,1],[ACTION.LEFT]:[-1,0],[ACTION
 const BENCHMARK_RESULTS=[
   ['clean','centralized',1,18,0,11.160],['clean','distributed',1,18,0,12.600],['clean','octocortex',1,18,0,5.176],
   ['sensor noise','centralized',1,22.38,.06,13.876],['sensor noise','distributed',1,22.38,.06,15.666],['sensor noise','octocortex',.99,23.33,.01,8.945],
-  ['component failure','centralized',.52,18,0,29.611],['component failure','distributed',1,18,0,10.595],['component failure','octocortex',1,18,0,4.924],
-  ['combined','centralized',.52,22.54,.05,31.074],['combined','distributed',1,22.38,.06,13.199],['combined','octocortex',.99,23.13,.01,8.294],
+  ['component failure','centralized',.52,18,0,29.611],['component failure','distributed',1,18,0,10.595],['component failure','octocortex',1,18,0,4.822],
+  ['combined','centralized',.52,22.54,.05,31.074],['combined','distributed',1,22.38,.06,13.199],['combined','octocortex',.97,22.88,.03,8.885],
 ];
 const CAPABILITY={PLAN_ROUTE:1};
 const key = cell => cell.join(',');
@@ -54,6 +54,17 @@ class CapabilityRouter {
   resolve(capability,available){const chain=this.routes[capability],owner=chain.find(unit=>available.has(unit));if(owner===undefined)return null;const previous=this.assignments.has(capability)?this.assignments.get(capability):chain[0];if(owner!==previous)this.handoffs++;this.assignments.set(capability,owner);return {capability,owner,primary:chain[0],delegated:owner!==chain[0]}}
 }
 
+class DistilledBackupPlanner {
+  constructor(owner,seed,learningRate=.12){this.owner=owner;this.learningRate=learningRate;let state=seed>>>0;const random=()=>((state=(Math.imul(state,1664525)+1013904223)>>>0)/4294967296);this.weights=Array.from({length:5},()=>random()*.04-.02);this.trainingAccuracy=0;this.energy=0}
+  cells(agent){return Object.fromEntries(Object.entries(MOVES).map(([action,[dx,dy]])=>[Number(action),[agent[0]+dx,agent[1]+dy]]))}
+  distance(cell,goal){return Math.abs(cell[0]-goal[0])+Math.abs(cell[1]-goal[1])}
+  features(state,action){const cell=this.cells(state.agent)[action],valid=cell[0]>=0&&cell[0]<state.size[0]&&cell[1]>=0&&cell[1]<state.size[1]&&!state.obstacles.has(key(cell)),progress=(this.distance(state.agent,state.goal)-this.distance(cell,state.goal))/(state.size[0]+state.size[1]-2),clearance=Object.values(this.cells(cell)).filter(next=>next[0]>=0&&next[0]<state.size[0]&&next[1]>=0&&next[1]<state.size[1]&&!state.obstacles.has(key(next))).length/4,[dx,dy]=MOVES[action],alignment=(dx*Math.sign(state.goal[0]-state.agent[0])+dy*Math.sign(state.goal[1]-state.agent[1]))/2;return [1,valid?1:-1,progress,clearance,alignment]}
+  score(features){return this.weights.reduce((sum,weight,index)=>sum+weight*features[index],0)}
+  choose(state){return Object.keys(MOVES).map(Number).reduce((best,action)=>this.score(this.features(state,action))>this.score(this.features(state,best))?action:best,ACTION.UP)}
+  teacher(state){const valid=Object.entries(this.cells(state.agent)).filter(([,cell])=>cell[0]>=0&&cell[0]<state.size[0]&&cell[1]>=0&&cell[1]<state.size[1]&&!state.obstacles.has(key(cell)));if(!valid.length)return ACTION.WAIT;valid.sort((a,b)=>this.distance(a[1],state.goal)-this.distance(b[1],state.goal)||Number(a[0])-Number(b[0]));return Number(valid[0][0])}
+  distill(world,epochs=24){const examples=[];for(let y=0;y<world.size[1];y++)for(let x=0;x<world.size[0];x++)if(!world.obstacles.has(`${x},${y}`)&&`${x},${y}`!==key(world.goal))examples.push({...world,agent:[x,y]});let state=(1000+this.owner)>>>0;const random=()=>((state=(Math.imul(state,1664525)+1013904223)>>>0)/4294967296);for(let epoch=0;epoch<epochs;epoch++){for(let i=examples.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[examples[i],examples[j]]=[examples[j],examples[i]]}for(const sample of examples){const teacher=this.teacher(sample),predicted=this.choose(sample);if(teacher===ACTION.WAIT||teacher===predicted)continue;const good=this.features(sample,teacher),bad=this.features(sample,predicted);this.weights=this.weights.map((weight,index)=>weight+this.learningRate*(good[index]-bad[index]))}}this.trainingAccuracy=examples.filter(sample=>this.choose(sample)===this.teacher(sample)).length/examples.length}
+}
+
 class SemanticAdapter {
   constructor(inputDim=8,latentDim=4,activeLatents=2,learningRate=.04,seed=17){
     this.inputDim=inputDim;this.latentDim=latentDim;this.activeLatents=activeLatents;this.learningRate=learningRate;this.steps=0;this.totalLoss=0;this.lastLoss=0;
@@ -86,8 +97,10 @@ class OctoSimulation {
     this.obstacles=[[2,0],[2,1],[2,2],[4,2],[5,2],[6,2],[6,3],[6,4],[8,4],[9,4],[10,4],[8,6]];
     this.obstacleSet=new Set(this.obstacles.map(key));this.collisions=0;this.done=false;this.lastDecision=null;
     this.bus=new SparseEventBus();this.neuron=new LIFNeuron();this.memory=new Map();this.adapter=new SemanticAdapter();this.capabilities=new CapabilityRouter();
+    this.backupPlanners=new Map([[UNIT.MEMORY,new DistilledBackupPlanner(UNIT.MEMORY,41)],[UNIT.PERCEPTION,new DistilledBackupPlanner(UNIT.PERCEPTION,43)]]);for(const planner of this.backupPlanners.values())planner.distill(this.worldState());
     this.localEnergy=0;this.globalEnergy=0;this.attention=[];return this.snapshot();
   }
+  worldState(){return {size:[12,8],agent:[...this.agent],goal:[...this.goal],obstacles:new Set(this.obstacleSet)}}
   packet(source,concept,salience,values={}){return {source,target:UNIT.WORKSPACE,concept,tick:this.tick,semantic_code:0,quantization_error:0,confidence:1,uncertainty:0,salience,urgency:0,risk:0,expected_reward:0,ttl_ms:0,state_delta:[],latent:[],flags:0,...values}}
   proposal(arm,action,confidence,values={}){return {arm,action,confidence,expected_reward:0,risk:0,urgency:0,energy_cost:0,reason_code:REASON.NONE,reason_value:0,...values}}
   nextCells(){return Object.fromEntries(Object.entries(MOVES).map(([action,[dx,dy]])=>[Number(action),[this.agent[0]+dx,this.agent[1]+dy]]))}
@@ -102,6 +115,7 @@ class OctoSimulation {
     const learned=this.adapter.encodeSemantic(UNIT.PLANNING,CONCEPT.ROUTE_PROPOSAL,[action/4,cell[0]/11,cell[1]/7,nextDistance/18,confidence,reward]);
     return {events:[this.packet(UNIT.PLANNING,CONCEPT.ROUTE_PROPOSAL,.42,{confidence,uncertainty:1-confidence,risk:.05,urgency:.22,expected_reward:reward,ttl_ms:250,state_delta:[action,cell[0],cell[1],nextDistance],latent:learned.quantizedLatent,semantic_code:learned.semanticCode,quantization_error:learned.quantizationError})],proposals:[this.proposal(UNIT.PLANNING,action,confidence,{expected_reward:reward,risk:.05,urgency:.22,energy_cost:.08,reason_code:REASON.GOAL_PROGRESS,reason_value:nextDistance})],cells};
   }
+  backupNavigation(owner){const planner=this.backupPlanners.get(owner),state=this.worldState();for(const cell of this.memory.keys())state.obstacles.add(cell);const cells=planner.cells(this.agent),action=planner.choose(state),ranked=Object.keys(MOVES).map(Number).map(candidate=>planner.score(planner.features(state,candidate))).sort((a,b)=>a-b),margin=ranked.at(-1)-ranked.at(-2),confidence=Math.min(.92,.62+.2*Math.tanh(Math.max(0,margin))),cell=cells[action],distance=planner.distance(cell,this.goal);planner.energy+=.022;const learned=this.adapter.encodeSemantic(owner,CONCEPT.ROUTE_PROPOSAL,[action/4,cell[0]/11,cell[1]/7,distance/18,confidence,.76]);return {events:[this.packet(owner,CONCEPT.ROUTE_PROPOSAL,.46,{confidence,uncertainty:1-confidence,risk:.08,urgency:.3,expected_reward:.76,ttl_ms:250,state_delta:[action,cell[0],cell[1],distance],latent:learned.quantizedLatent,semantic_code:learned.semanticCode,quantization_error:learned.quantizationError,flags:2})],proposals:[this.proposal(owner,action,confidence,{expected_reward:.76,risk:.08,urgency:.3,energy_cost:.04,reason_code:REASON.GOAL_PROGRESS,reason_value:distance})],cells}}
   vision(){
     const adjacent=Object.values(this.nextCells()).filter(cell=>this.obstacleSet.has(key(cell))).length;
     const danger=adjacent/2, spike=this.neuron.step(danger);this.localEnergy+=.055+.035*danger;
@@ -128,8 +142,7 @@ class OctoSimulation {
   step(){
     if(this.done)return this.snapshot();this.tick++;
     const available=new Set([UNIT.PLANNING,UNIT.MEMORY,UNIT.PERCEPTION].filter(unit=>!this.disabledUnits.has(unit))), planningLease=this.capabilities.resolve(CAPABILITY.PLAN_ROUTE,available);
-    const nav=planningLease?this.navigation():{events:[],proposals:[],cells:this.nextCells()};
-    if(planningLease?.delegated){nav.events.forEach(event=>event.source=planningLease.owner);nav.proposals.forEach(proposal=>proposal.arm=planningLease.owner)}
+    const nav=!planningLease?{events:[],proposals:[],cells:this.nextCells()}:planningLease.owner===UNIT.PLANNING?this.navigation():this.backupNavigation(planningLease.owner);
     const visual=this.disabledUnits.has(UNIT.PERCEPTION)?{events:[],proposals:[],snn:{danger:0,spike:false,potential:this.neuron.potential}}:this.vision();
     const memory=this.disabledUnits.has(UNIT.MEMORY)?{events:[],proposals:[]}:this.recall(nav.cells);
     const rawEvents=[...nav.events,...visual.events,...memory.events];
@@ -153,7 +166,7 @@ class OctoSimulation {
     ];
     return {...this.snapshot(),transition:{collision,snn:visual.snn,planning_owner:planningLease?UNIT_NAME[planningLease.owner]:null,planning_delegated:Boolean(planningLease?.delegated),all_events:observed,salient_events:salient.map(packetTrace),unit_activity:unitActivity,pipeline:{observed:observed.length,published:observed.filter(event=>event.published).length,filtered:observed.filter(event=>!event.published).length,proposals:proposals.length,adapter_updates:this.adapter.steps}}};
   }
-  snapshot(){return {size:[12,8],agent:[...this.agent],goal:[...this.goal],obstacles:this.obstacles.map(cell=>[...cell]),tick:this.tick,done:this.done,collisions:this.collisions,decision:this.lastDecision?decisionTrace(this.lastDecision):null,attention:this.attention.map(packetTrace),metrics:{observations:this.bus.observations,published_events:this.bus.published,event_sparsity:+this.bus.sparsity.toFixed(3),snn_spikes:this.neuron.spikes,local_energy:+this.localEnergy.toFixed(3),global_energy:+this.globalEnergy.toFixed(3),adapter_loss:+this.adapter.lastLoss.toFixed(6),adapter_mean_loss:+this.adapter.meanLoss.toFixed(6),adapter_steps:this.adapter.steps,semantic_codes_used:this.adapter.quantizer.codesUsed,quantization_error:+this.adapter.quantizer.lastError.toFixed(6),capability_handoffs:this.capabilities.handoffs,planning_owner:UNIT_NAME[this.capabilities.assignments.get(CAPABILITY.PLAN_ROUTE)??UNIT.PLANNING]}}}
+  snapshot(){const backupEnergy=[...this.backupPlanners.values()].reduce((sum,planner)=>sum+planner.energy,0);return {size:[12,8],agent:[...this.agent],goal:[...this.goal],obstacles:this.obstacles.map(cell=>[...cell]),tick:this.tick,done:this.done,collisions:this.collisions,decision:this.lastDecision?decisionTrace(this.lastDecision):null,attention:this.attention.map(packetTrace),metrics:{observations:this.bus.observations,published_events:this.bus.published,event_sparsity:+this.bus.sparsity.toFixed(3),snn_spikes:this.neuron.spikes,local_energy:+(this.localEnergy+backupEnergy).toFixed(3),global_energy:+this.globalEnergy.toFixed(3),adapter_loss:+this.adapter.lastLoss.toFixed(6),adapter_mean_loss:+this.adapter.meanLoss.toFixed(6),adapter_steps:this.adapter.steps,semantic_codes_used:this.adapter.quantizer.codesUsed,quantization_error:+this.adapter.quantizer.lastError.toFixed(6),capability_handoffs:this.capabilities.handoffs,planning_owner:UNIT_NAME[this.capabilities.assignments.get(CAPABILITY.PLAN_ROUTE)??UNIT.PLANNING],backup_accuracy:+Math.max(...[...this.backupPlanners.values()].map(planner=>planner.trainingAccuracy)).toFixed(3)}}}
 }
 
 const simulation=new OctoSimulation();let timer=null;
@@ -173,5 +186,5 @@ function step(){render(simulation.step())}function reset(){render(simulation.res
 function togglePlanningFault(){if(simulation.disabledUnits.has(UNIT.PLANNING)){simulation.disabledUnits.delete(UNIT.PLANNING);$('#fault').textContent='Fail Planning';$('#fault').classList.remove('active')}else{simulation.disabledUnits.add(UNIT.PLANNING);$('#fault').textContent='Restore Planning';$('#fault').classList.add('active')}render(simulation.snapshot())}
 function toggleRun(){if(timer){clearInterval(timer);timer=null;$('#run').textContent='Run';$('#run').classList.remove('active')}else{timer=setInterval(step,450);$('#run').textContent='Pause';$('#run').classList.add('active')}}
 function renderBenchmark(){const target=$('#benchmark');if(!target)return;target.innerHTML=`<table><thead><tr><th>Scenario</th><th>Architecture</th><th>Success</th><th>Steps*</th><th>Collisions</th><th>Energy</th></tr></thead><tbody>${BENCHMARK_RESULTS.map(([scenario,architecture,success,steps,collisions,energy])=>`<tr class="${architecture==='octocortex'?'ours':''}"><td>${scenario}</td><td>${architecture}</td><td>${Math.round(success*100)}%</td><td>${steps}</td><td>${collisions}</td><td>${energy.toFixed(3)}</td></tr>`).join('')}</tbody></table><small>* Steps are averaged over successful episodes. Component outage probability: 35%; sensor noise: 15%.</small>`}
-if(typeof module!=='undefined')module.exports={UNIT,CONCEPT,ACTION,REASON,CAPABILITY,BENCHMARK_RESULTS,LIFNeuron,SparseEventBus,CapabilityRouter,OnlineVectorQuantizer,SemanticAdapter,OctoSimulation};
+if(typeof module!=='undefined')module.exports={UNIT,CONCEPT,ACTION,REASON,CAPABILITY,BENCHMARK_RESULTS,LIFNeuron,SparseEventBus,CapabilityRouter,DistilledBackupPlanner,OnlineVectorQuantizer,SemanticAdapter,OctoSimulation};
 if(typeof document!=='undefined'){$('#step').onclick=step;$('#run').onclick=toggleRun;$('#fault').onclick=togglePlanningFault;$('#reset').onclick=reset;render(simulation.snapshot());renderBenchmark()}

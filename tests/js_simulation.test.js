@@ -48,9 +48,11 @@ assert.equal(BENCHMARK_RESULTS.length, 12);
 
 const failedSimulation = new OctoSimulation();
 failedSimulation.disabledUnits.add(UNIT.PLANNING);
+failedSimulation.navigation = () => { throw new Error('primary planner was called'); };
 for(let tick=0;tick<80&&!failedSimulation.done;tick++) failedSimulation.step();
 assert.equal(failedSimulation.done, true);
 assert.equal(failedSimulation.snapshot().metrics.planning_owner, 'memory');
 assert.equal(failedSimulation.snapshot().metrics.capability_handoffs, 1);
+assert.ok(failedSimulation.snapshot().metrics.backup_accuracy > .75);
 
 console.log('OctoCortex browser simulation tests passed');

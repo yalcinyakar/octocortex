@@ -116,6 +116,7 @@ class CoreTests(unittest.TestCase):
 
     def test_simulation_reaches_goal_after_planning_failure(self):
         simulation = OctoSimulation(disabled_units=frozenset({UnitCode.PLANNING}))
+        simulation.navigation.propose = lambda *_: self.fail("primary planner was called")
         for _ in range(80):
             state = simulation.step()
             if state["done"]:
@@ -123,6 +124,7 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(state["done"])
         self.assertEqual(state["metrics"]["planning_owner"], "memory")
         self.assertEqual(state["metrics"]["capability_handoffs"], 1)
+        self.assertGreater(state["metrics"]["backup_accuracy"], 0.75)
 
     def test_architecture_benchmark_covers_all_cases(self):
         report = run_benchmark(trials=3, max_steps=80)

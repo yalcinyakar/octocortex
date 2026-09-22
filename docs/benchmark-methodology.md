@@ -36,6 +36,9 @@ implementations only; it does not establish hardware efficiency. The embedded
 dashboard table is a checked-in result from 100 seeds and must be regenerated
 when policies, costs, or scenarios change.
 
-The current failover transfers ownership and attribution of the shared
-reference planning capability. It demonstrates architectural continuity, not
-yet independently learned backup-planning weights.
+The current failover transfers ownership to independently parameterized backup
+policies. Memory and perception each distill route examples into their own
+five-weight linear model before execution. Ablation tests replace the primary
+planner with a deliberate failure and verify that the backup still reaches the
+goal. This demonstrates independent execution, but not yet generalization to
+maps absent from the distillation set.

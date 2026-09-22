@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import random
-from dataclasses import replace
 
 from octocortex.arms.memory import MemoryArm
 from octocortex.arms.navigation import MOVES, NavigationArm
@@ -12,6 +11,7 @@ from octocortex.core.models import ActionCode
 from octocortex.core.octoir import ConceptCode, SemanticPacket, UnitCode
 from octocortex.core.workspace import GlobalWorkspace
 from octocortex.learning.adapter import SparseSemanticAdapter
+from octocortex.learning.backup_planner import DistilledBackupPlanner
 
 
 class OctoSimulation:
@@ -47,6 +47,12 @@ class OctoSimulation:
             (2, 0), (2, 1), (2, 2), (4, 2), (5, 2), (6, 2),
             (6, 3), (6, 4), (8, 4), (9, 4), (10, 4), (8, 6),
         }
+        self.backup_planners = {
+            UnitCode.MEMORY: DistilledBackupPlanner(UnitCode.MEMORY, seed=41),
+            UnitCode.PERCEPTION: DistilledBackupPlanner(UnitCode.PERCEPTION, seed=43),
+        }
+        for planner in self.backup_planners.values():
+            planner.distill(self._state())
         self.collisions = 0
         self.done = False
         self.last_decision = None
@@ -85,11 +91,19 @@ class OctoSimulation:
         if planning_lease is None:
             nav_events, nav_proposals = [], []
             next_cells = self.navigation.next_cells(self.agent)
-        else:
+        elif planning_lease.owner is UnitCode.PLANNING:
             nav_events, nav_proposals, next_cells = self.navigation.propose(perceived_state, self.tick)
-            if planning_lease.delegated:
-                nav_events = [replace(packet, source=planning_lease.owner) for packet in nav_events]
-                nav_proposals = [replace(proposal, arm=planning_lease.owner) for proposal in nav_proposals]
+        else:
+            remembered_obstacles = {
+                tuple(cell) for cell in perceived_state["obstacles"]
+            } | set(self.memory.bad_cells)
+            backup_state = {
+                **perceived_state,
+                "obstacles": [list(cell) for cell in sorted(remembered_obstacles)],
+            }
+            nav_events, nav_proposals, next_cells = self.backup_planners[planning_lease.owner].propose(
+                backup_state, self.tick, self.adapter,
+            )
         if UnitCode.PERCEPTION in self.disabled_units:
             visual_events, visual_proposals = [], []
             snn_state = {"danger": 0.0, "spike": False, "potential": self.vision.network.neuron.potential}
@@ -174,6 +188,7 @@ class OctoSimulation:
         local_energy = (
             self.vision.energy + self.vision.network.energy
             + self.memory.energy + self.navigation.energy
+            + sum(planner.energy for planner in self.backup_planners.values())
         )
         return {
             **self._state(),
@@ -200,5 +215,8 @@ class OctoSimulation:
                 "planning_owner": self.capabilities.assignments.get(
                     CapabilityCode.PLAN_ROUTE, UnitCode.PLANNING
                 ).name.lower(),
+                "backup_accuracy": round(max(
+                    planner.training_accuracy for planner in self.backup_planners.values()
+                ), 3),
             },
         }
