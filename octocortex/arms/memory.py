@@ -27,7 +27,9 @@ class MemoryArm:
                 source=self.unit, target=UnitCode.WORKSPACE,
                 concept=ConceptCode.MEMORY_QUIET, tick=tick,
                 confidence=0.8, salience=0.15, ttl_ms=100,
-                latent=learned.latent,
+                latent=learned.quantized_latent,
+                semantic_code=learned.semantic_code,
+                quantization_error=learned.quantization_error,
             )], []
         action, cell, count = max(risky, key=lambda item: item[2])
         learned = self.adapter.encode_semantic(
@@ -42,7 +44,9 @@ class MemoryArm:
             urgency=0.55, risk=min(0.98, 0.6 + 0.1 * count),
             ttl_ms=500,
             state_delta=(float(cell[0]), float(cell[1]), float(count), float(action)),
-            latent=learned.latent,
+            latent=learned.quantized_latent,
+            semantic_code=learned.semantic_code,
+            quantization_error=learned.quantization_error,
         )], [Proposal(
             arm=self.unit,
             action=ActionCode.WAIT,

@@ -1,4 +1,4 @@
-# OctoIR v0.1
+# OctoIR v0.2
 
 OctoIR is the language-free intermediate representation used between
 OctoCortex processing units. Natural language exists only at system boundaries
@@ -12,6 +12,8 @@ Each packet has a fixed typed header followed by two float vectors:
 | --- | --- |
 | `source`, `target` | Numeric processing-unit identifiers |
 | `concept` | Numeric semantic concept identifier |
+| `semantic_code` | Learned shared codebook identity |
+| `quantization_error` | Distance from latent to its selected code |
 | `tick`, `ttl_ms` | Logical time and expiry |
 | `confidence`, `uncertainty` | Epistemic quality |
 | `salience`, `urgency`, `risk` | Routing and arbitration signals |
@@ -39,11 +41,15 @@ matrices learn immediately with stochastic gradient descent.
 This reference adapter is dependency-free and deliberately small. It proves
 the architectural contract: units exchange a learned sparse representation,
 while OctoIR remains stable if the adapter is later replaced by a larger
-PyTorch or JAX model. The dashboard exposes last and mean reconstruction loss;
+PyTorch or JAX model. A shared eight-entry online vector-quantization codebook
+maps the sparse latent to a stable semantic code. Similar latent states move
+the selected centroid online and can therefore converge on the same identity
+without language labels. The dashboard exposes reconstruction loss,
+quantization error, and codebook utilization;
 human-readable labels remain boundary-only.
 
 ## Evolution
 
-Version 0.1 establishes transport, observability, and learned adapter
-boundaries. Later versions will add vector quantization, schema negotiation, causal
+Version 0.2 establishes transport, observability, learned adapter, and shared
+codebook boundaries. Later versions will add schema negotiation, causal
 references, and compatibility rules for a Kafka-compatible event fabric.

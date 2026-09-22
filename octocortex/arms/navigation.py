@@ -42,7 +42,9 @@ class NavigationArm:
                 concept=ConceptCode.TRAPPED, tick=tick,
                 confidence=1.0, salience=1.0, urgency=1.0, risk=1.0,
                 ttl_ms=250,
-                latent=learned.latent,
+                latent=learned.quantized_latent,
+                semantic_code=learned.semantic_code,
+                quantization_error=learned.quantization_error,
             )], [Proposal(
                 self.unit, ActionCode.WAIT, 1.0, risk=1.0, urgency=1.0,
                 reason_code=ReasonCode.NO_VALID_MOVE,
@@ -81,5 +83,7 @@ class NavigationArm:
             risk=proposal.risk, expected_reward=proposal.expected_reward,
             ttl_ms=250,
             state_delta=(float(action), float(cell[0]), float(cell[1]), float(new_distance)),
-            latent=learned.latent,
+            latent=learned.quantized_latent,
+            semantic_code=learned.semantic_code,
+            quantization_error=learned.quantization_error,
         )], [proposal], cells

@@ -6,6 +6,7 @@ from octocortex.core.models import ActionCode, Proposal, ReasonCode
 from octocortex.core.octoir import ConceptCode, SemanticPacket, UnitCode
 from octocortex.simulation.environment import OctoSimulation
 from octocortex.learning.adapter import SparseSemanticAdapter
+from octocortex.learning.quantizer import OnlineVectorQuantizer
 from octocortex.snn.network import LIFNeuron
 
 
@@ -39,6 +40,8 @@ class CoreTests(unittest.TestCase):
             ttl_ms=250,
             state_delta=(2.0, 5.0),
             latent=(0.1, 0.0, -0.4),
+            semantic_code=5,
+            quantization_error=0.031,
         )
         decoded = SemanticPacket.decode(packet.encode())
         self.assertEqual(decoded.source, packet.source)
@@ -46,6 +49,8 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(decoded.tick, 42)
         self.assertEqual(decoded.state_delta, packet.state_delta)
         self.assertAlmostEqual(decoded.latent[2], -0.4, places=6)
+        self.assertEqual(decoded.semantic_code, 5)
+        self.assertAlmostEqual(decoded.quantization_error, 0.031, places=6)
 
     def test_lif_neuron_accumulates_and_spikes(self):
         neuron = LIFNeuron(threshold=1.0, leak=1.0)
@@ -61,6 +66,14 @@ class CoreTests(unittest.TestCase):
         self.assertLess(sum(losses[-20:]) / 20, sum(losses[:20]) / 20)
         self.assertLessEqual(sum(value != 0 for value in result.latent), 2)
         self.assertEqual(adapter.checkpoint()["steps"], 201)
+
+    def test_vector_quantizer_assigns_stable_codes(self):
+        quantizer = OnlineVectorQuantizer()
+        vector = (0.0, -0.2, -0.18, 0.0)
+        codes = [quantizer.quantize(vector).code for _ in range(100)]
+        self.assertEqual(len(set(codes[-20:])), 1)
+        self.assertLess(quantizer.quantize(vector, learn=False).error, 0.001)
+        self.assertGreaterEqual(quantizer.codes_used, 1)
 
     def test_simulation_reaches_goal(self):
         simulation = OctoSimulation()
@@ -80,6 +93,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(state["metrics"]["observations"], 0)
         self.assertEqual(state["metrics"]["local_energy"], 0.0)
         self.assertEqual(state["metrics"]["adapter_steps"], 0)
+        self.assertEqual(state["metrics"]["semantic_codes_used"], 0)
 
 
 if __name__ == "__main__":

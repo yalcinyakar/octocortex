@@ -14,6 +14,9 @@ state deltas, confidence/risk signals, and sparse latent vectors.
 One shared online autoencoder now learns those latent vectors directly from
 typed local signals. Its top-k bottleneck keeps only two of four latent
 components active, avoiding text/token conversion between processing units.
+An online vector quantizer maps each sparse latent to one of eight shared
+semantic codes, so similar internal states can converge on the same compact
+identity across units.
 
 The first demo is a grid-world agent. The navigation arm tries to reach a goal, the visual arm emits danger spikes near obstacles, and the memory arm learns which cells have caused collisions. The browser UI exposes every proposal and arbitration decision.
 
@@ -67,5 +70,6 @@ The architecture is intentionally measurable. The API reports:
 - cumulative local and global energy estimates;
 - SNN spikes and membrane potential.
 - semantic adapter reconstruction loss and training steps.
+- vector-quantization error and shared semantic-code utilization.
 
 This is an architecture simulator, not yet a biological fidelity claim. The next useful milestone is a benchmark harness comparing this hybrid against a centralized policy and a fully distributed policy under sensor noise and arm failure.

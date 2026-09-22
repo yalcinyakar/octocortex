@@ -42,7 +42,9 @@ class VisionArm:
                 risk=min(1.0, danger),
                 ttl_ms=180,
                 state_delta=(float(adjacent),),
-                latent=learned.latent,
+                latent=learned.quantized_latent,
+                semantic_code=learned.semantic_code,
+                quantization_error=learned.quantization_error,
                 flags=1 if spike else 0,
             )
         ]

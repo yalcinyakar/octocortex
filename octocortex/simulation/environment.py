@@ -89,7 +89,9 @@ class OctoSimulation:
                     risk=1.0,
                     ttl_ms=500,
                     state_delta=(float(target[0]), float(target[1])),
-                    latent=learned.latent,
+                    latent=learned.quantized_latent,
+                    semantic_code=learned.semantic_code,
+                    quantization_error=learned.quantization_error,
                 ))
             else:
                 self.agent = target
@@ -110,7 +112,9 @@ class OctoSimulation:
                 expected_reward=1.0,
                 ttl_ms=1_000,
                 state_delta=(float(self.goal[0]), float(self.goal[1])),
-                latent=learned.latent,
+                latent=learned.quantized_latent,
+                semantic_code=learned.semantic_code,
+                quantization_error=learned.quantization_error,
             ))
 
         snapshot = self.snapshot()
@@ -143,5 +147,7 @@ class OctoSimulation:
                 "adapter_loss": round(self.adapter.last_loss, 6),
                 "adapter_mean_loss": round(self.adapter.mean_loss, 6),
                 "adapter_steps": self.adapter.steps,
+                "semantic_codes_used": self.adapter.quantizer.codes_used,
+                "quantization_error": round(self.adapter.quantizer.last_error, 6),
             },
         }

@@ -27,7 +27,8 @@ class ConceptCode(IntEnum):
     GOAL_REACHED = 8
 
 
-_HEADER = struct.Struct("<4sBBBHBIIffffffHH")
+_HEADER_V1 = struct.Struct("<4sBBBHBIIffffffHH")
+_HEADER_V2 = struct.Struct("<4sBBBHHBIIfffffffHH")
 _MAGIC = b"OIR1"
 
 
@@ -44,6 +45,8 @@ class SemanticPacket:
     target: UnitCode
     concept: ConceptCode
     tick: int
+    semantic_code: int = 0
+    quantization_error: float = 0.0
     confidence: float = 1.0
     uncertainty: float = 0.0
     salience: float = 0.0
@@ -58,12 +61,13 @@ class SemanticPacket:
     def encode(self) -> bytes:
         state = tuple(float(value) for value in self.state_delta)
         latent = tuple(float(value) for value in self.latent)
-        header = _HEADER.pack(
+        header = _HEADER_V2.pack(
             _MAGIC,
-            1,
+            2,
             int(self.source),
             int(self.target),
             int(self.concept),
+            self.semantic_code,
             self.flags,
             self.tick,
             self.ttl_ms,
@@ -73,6 +77,7 @@ class SemanticPacket:
             self.urgency,
             self.risk,
             self.expected_reward,
+            self.quantization_error,
             len(state),
             len(latent),
         )
@@ -81,23 +86,34 @@ class SemanticPacket:
 
     @classmethod
     def decode(cls, data: bytes) -> "SemanticPacket":
-        if len(data) < _HEADER.size:
+        if len(data) < _HEADER_V1.size:
             raise ValueError("OctoIR packet is shorter than its header")
-        (
-            magic, version, source, target, concept, flags, tick, ttl_ms,
-            confidence, uncertainty, salience, urgency, risk, reward,
-            state_len, latent_len,
-        ) = _HEADER.unpack_from(data)
-        if magic != _MAGIC or version != 1:
+        magic, version = struct.unpack_from("<4sB", data)
+        if magic != _MAGIC or version not in (1, 2):
             raise ValueError("Unsupported OctoIR packet")
+        if version == 1:
+            (
+                _, _, source, target, concept, flags, tick, ttl_ms,
+                confidence, uncertainty, salience, urgency, risk, reward,
+                state_len, latent_len,
+            ) = _HEADER_V1.unpack_from(data)
+            semantic_code, quantization_error, header_size = 0, 0.0, _HEADER_V1.size
+        else:
+            (
+                _, _, source, target, concept, semantic_code, flags, tick, ttl_ms,
+                confidence, uncertainty, salience, urgency, risk, reward,
+                quantization_error, state_len, latent_len,
+            ) = _HEADER_V2.unpack_from(data)
+            header_size = _HEADER_V2.size
         count = state_len + latent_len
-        expected_size = _HEADER.size + count * 4
+        expected_size = header_size + count * 4
         if len(data) != expected_size:
             raise ValueError("OctoIR payload length does not match its header")
-        values = struct.unpack_from(f"<{count}f", data, _HEADER.size) if count else ()
+        values = struct.unpack_from(f"<{count}f", data, header_size) if count else ()
         return cls(
             source=UnitCode(source), target=UnitCode(target),
             concept=ConceptCode(concept), tick=tick,
+            semantic_code=semantic_code, quantization_error=quantization_error,
             confidence=confidence, uncertainty=uncertainty,
             salience=salience, urgency=urgency, risk=risk,
             expected_reward=reward, ttl_ms=ttl_ms,
@@ -113,6 +129,8 @@ class SemanticPacket:
             "salience": round(self.salience, 4),
             "payload": {
                 "concept_id": int(self.concept),
+                "semantic_code": self.semantic_code,
+                "quantization_error": round(self.quantization_error, 6),
                 "confidence": round(self.confidence, 4),
                 "uncertainty": round(self.uncertainty, 4),
                 "urgency": round(self.urgency, 4),
@@ -122,4 +140,3 @@ class SemanticPacket:
             },
             "tick": self.tick,
         }
-

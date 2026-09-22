@@ -5,10 +5,15 @@ import random
 from dataclasses import dataclass
 from typing import Iterable
 
+from octocortex.learning.quantizer import OnlineVectorQuantizer
+
 
 @dataclass(frozen=True, slots=True)
 class AdapterResult:
     latent: tuple[float, ...]
+    quantized_latent: tuple[float, ...]
+    semantic_code: int
+    quantization_error: float
     reconstruction: tuple[float, ...]
     loss: float
 
@@ -47,6 +52,7 @@ class SparseSemanticAdapter:
         ]
         self.encoder_bias = [0.0] * latent_dim
         self.decoder_bias = [0.0] * input_dim
+        self.quantizer = OnlineVectorQuantizer(dimension=latent_dim)
         self.steps = 0
         self.total_loss = 0.0
         self.last_loss = 0.0
@@ -98,7 +104,11 @@ class SparseSemanticAdapter:
         self.steps += 1
         self.last_loss = loss
         self.total_loss += loss
-        return AdapterResult(tuple(latent), tuple(reconstruction), loss)
+        quantized = self.quantizer.quantize(latent)
+        return AdapterResult(
+            tuple(latent), quantized.vector, quantized.code,
+            quantized.error, tuple(reconstruction), loss,
+        )
 
     def encode_semantic(self, source: int, concept: int, features: Iterable[float] = ()) -> AdapterResult:
         return self.encode_and_learn(self.semantic_vector(source, concept, features))
@@ -120,4 +130,5 @@ class SparseSemanticAdapter:
             "decoder_bias": self.decoder_bias,
             "steps": self.steps,
             "total_loss": self.total_loss,
+            "quantizer": self.quantizer.checkpoint(),
         }

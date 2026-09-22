@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const {UNIT, CONCEPT, LIFNeuron, SparseEventBus, SemanticAdapter, OctoSimulation} = require('../octocortex/static/app.js');
+const {UNIT, CONCEPT, LIFNeuron, SparseEventBus, OnlineVectorQuantizer, SemanticAdapter, OctoSimulation} = require('../octocortex/static/app.js');
 
 const neuron = new LIFNeuron(1, 1);
 assert.equal(neuron.step(.4), false);
@@ -18,12 +18,18 @@ const encoded = adapter.encodeAndLearn(vector);
 assert.ok(losses.slice(-20).reduce((a,b)=>a+b)/20 < losses.slice(0,20).reduce((a,b)=>a+b)/20);
 assert.ok(encoded.latent.filter(value => value !== 0).length <= 2);
 
+const quantizer = new OnlineVectorQuantizer();
+const codes = Array.from({length:100}, () => quantizer.quantize([0,-.2,-.18,0]).code);
+assert.equal(new Set(codes.slice(-20)).size, 1);
+assert.ok(quantizer.quantize([0,-.2,-.18,0], false).error < .001);
+
 const simulation = new OctoSimulation();
 const firstStep = simulation.step();
 assert.equal(firstStep.transition.unit_activity.length, 4);
 assert.equal(firstStep.transition.all_events.length, 3);
 assert.equal(firstStep.transition.pipeline.observed, 3);
 assert.ok(firstStep.transition.all_events.some(event => event.published === false));
+assert.ok(firstStep.transition.all_events.every(event => Number.isInteger(event.payload.semantic_code)));
 let state;
 for(let tick=0;tick<80;tick++){
   state = simulation.step();
