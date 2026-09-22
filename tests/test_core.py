@@ -5,6 +5,7 @@ from octocortex.core.event_bus import SparseEventBus
 from octocortex.core.models import ActionCode, Proposal, ReasonCode
 from octocortex.core.octoir import ConceptCode, SemanticPacket, UnitCode
 from octocortex.simulation.environment import OctoSimulation
+from octocortex.learning.adapter import SparseSemanticAdapter
 from octocortex.snn.network import LIFNeuron
 
 
@@ -52,6 +53,15 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(neuron.step(0.7))
         self.assertEqual(neuron.spikes, 1)
 
+    def test_sparse_adapter_learns_and_limits_active_latents(self):
+        adapter = SparseSemanticAdapter()
+        vector = adapter.semantic_vector(UnitCode.PERCEPTION, ConceptCode.DANGER_SPIKE, (0.8, 1.0, 0.5))
+        losses = [adapter.encode_and_learn(vector).loss for _ in range(200)]
+        result = adapter.encode_and_learn(vector)
+        self.assertLess(sum(losses[-20:]) / 20, sum(losses[:20]) / 20)
+        self.assertLessEqual(sum(value != 0 for value in result.latent), 2)
+        self.assertEqual(adapter.checkpoint()["steps"], 201)
+
     def test_simulation_reaches_goal(self):
         simulation = OctoSimulation()
         for _ in range(80):
@@ -69,6 +79,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(state["tick"], 0)
         self.assertEqual(state["metrics"]["observations"], 0)
         self.assertEqual(state["metrics"]["local_energy"], 0.0)
+        self.assertEqual(state["metrics"]["adapter_steps"], 0)
 
 
 if __name__ == "__main__":

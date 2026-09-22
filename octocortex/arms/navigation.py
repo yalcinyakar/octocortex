@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from octocortex.core.models import ActionCode, Proposal, ReasonCode
 from octocortex.core.octoir import ConceptCode, SemanticPacket, UnitCode
+from octocortex.learning.adapter import SparseSemanticAdapter
 
 
 MOVES = {
@@ -15,7 +16,8 @@ MOVES = {
 class NavigationArm:
     unit = UnitCode.PLANNING
 
-    def __init__(self) -> None:
+    def __init__(self, adapter: SparseSemanticAdapter) -> None:
+        self.adapter = adapter
         self.energy = 0.0
 
     def next_cells(self, agent: tuple[int, int]) -> dict[ActionCode, tuple[int, int]]:
@@ -34,11 +36,13 @@ class NavigationArm:
         }
         self.energy += 0.035 + 0.008 * len(valid)
         if not valid:
+            learned = self.adapter.encode_semantic(self.unit, ConceptCode.TRAPPED, (1.0, 1.0))
             return [SemanticPacket(
                 source=self.unit, target=UnitCode.WORKSPACE,
                 concept=ConceptCode.TRAPPED, tick=tick,
                 confidence=1.0, salience=1.0, urgency=1.0, risk=1.0,
                 ttl_ms=250,
+                latent=learned.latent,
             )], [Proposal(
                 self.unit, ActionCode.WAIT, 1.0, risk=1.0, urgency=1.0,
                 reason_code=ReasonCode.NO_VALID_MOVE,
@@ -61,6 +65,14 @@ class NavigationArm:
             reason_code=ReasonCode.GOAL_PROGRESS,
             reason_value=float(new_distance),
         )
+        learned = self.adapter.encode_semantic(
+            self.unit, ConceptCode.ROUTE_PROPOSAL,
+            (
+                float(action) / 4.0, cell[0] / 11.0, cell[1] / 7.0,
+                new_distance / 18.0, proposal.confidence,
+                proposal.expected_reward,
+            ),
+        )
         return [SemanticPacket(
             source=self.unit, target=UnitCode.WORKSPACE,
             concept=ConceptCode.ROUTE_PROPOSAL, tick=tick,
@@ -69,4 +81,5 @@ class NavigationArm:
             risk=proposal.risk, expected_reward=proposal.expected_reward,
             ttl_ms=250,
             state_delta=(float(action), float(cell[0]), float(cell[1]), float(new_distance)),
+            latent=learned.latent,
         )], [proposal], cells

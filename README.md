@@ -11,6 +11,9 @@ Processing units communicate through **OctoIR**, a typed language-free
 intermediate representation. Human-readable labels are decoded only at the
 dashboard boundary; the internal event fabric transports numeric concept IDs,
 state deltas, confidence/risk signals, and sparse latent vectors.
+One shared online autoencoder now learns those latent vectors directly from
+typed local signals. Its top-k bottleneck keeps only two of four latent
+components active, avoiding text/token conversion between processing units.
 
 The first demo is a grid-world agent. The navigation arm tries to reach a goal, the visual arm emits danger spikes near obstacles, and the memory arm learns which cells have caused collisions. The browser UI exposes every proposal and arbitration decision.
 
@@ -47,6 +50,7 @@ octocortex/
 ├── arms/          # local perception, memory, and navigation policies
 ├── core/          # event bus, proposals, workspace, arbitration
 ├── docs/          # OctoIR protocol specification
+├── learning/      # shared online sparse semantic adapter
 ├── simulation/    # deterministic grid-world experiment
 ├── snn/           # minimal leaky-integrate-and-fire network
 ├── static/        # live dashboard
@@ -62,5 +66,6 @@ The architecture is intentionally measurable. The API reports:
 - chosen arm and decision score;
 - cumulative local and global energy estimates;
 - SNN spikes and membrane potential.
+- semantic adapter reconstruction loss and training steps.
 
 This is an architecture simulator, not yet a biological fidelity claim. The next useful milestone is a benchmark harness comparing this hybrid against a centralized policy and a fully distributed policy under sensor noise and arm failure.

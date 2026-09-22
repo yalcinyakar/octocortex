@@ -9,6 +9,7 @@ from octocortex.core.event_bus import SparseEventBus
 from octocortex.core.models import ActionCode
 from octocortex.core.octoir import ConceptCode, SemanticPacket, UnitCode
 from octocortex.core.workspace import GlobalWorkspace
+from octocortex.learning.adapter import SparseSemanticAdapter
 
 
 class OctoSimulation:
@@ -22,9 +23,10 @@ class OctoSimulation:
         # experiments remain comparable from the browser.
         self.bus = SparseEventBus(threshold=0.5)
         self.workspace = GlobalWorkspace()
-        self.vision = VisionArm()
-        self.memory = MemoryArm()
-        self.navigation = NavigationArm()
+        self.adapter = SparseSemanticAdapter()
+        self.vision = VisionArm(self.adapter)
+        self.memory = MemoryArm(self.adapter)
+        self.navigation = NavigationArm(self.adapter)
         self.tick = 0
         self.agent = (0, 0)
         self.goal = (11, 7)
@@ -72,6 +74,10 @@ class OctoSimulation:
                 collision = True
                 self.collisions += 1
                 self.memory.remember_collision(target)
+                learned = self.adapter.encode_semantic(
+                    UnitCode.EXECUTION, ConceptCode.COLLISION,
+                    (target[0] / 11, target[1] / 7, 1.0, 1.0),
+                )
                 self.bus.observe(SemanticPacket(
                     source=UnitCode.EXECUTION,
                     target=UnitCode.WORKSPACE,
@@ -83,12 +89,17 @@ class OctoSimulation:
                     risk=1.0,
                     ttl_ms=500,
                     state_delta=(float(target[0]), float(target[1])),
+                    latent=learned.latent,
                 ))
             else:
                 self.agent = target
 
         if self.agent == self.goal:
             self.done = True
+            learned = self.adapter.encode_semantic(
+                UnitCode.EXECUTION, ConceptCode.GOAL_REACHED,
+                (self.goal[0] / 11, self.goal[1] / 7, 1.0),
+            )
             self.bus.observe(SemanticPacket(
                 source=UnitCode.EXECUTION,
                 target=UnitCode.WORKSPACE,
@@ -99,6 +110,7 @@ class OctoSimulation:
                 expected_reward=1.0,
                 ttl_ms=1_000,
                 state_delta=(float(self.goal[0]), float(self.goal[1])),
+                latent=learned.latent,
             ))
 
         snapshot = self.snapshot()
@@ -128,5 +140,8 @@ class OctoSimulation:
                 "snn_spikes": self.vision.network.neuron.spikes,
                 "local_energy": round(local_energy, 3),
                 "global_energy": round(self.workspace.global_energy, 3),
+                "adapter_loss": round(self.adapter.last_loss, 6),
+                "adapter_mean_loss": round(self.adapter.mean_loss, 6),
+                "adapter_steps": self.adapter.steps,
             },
         }
