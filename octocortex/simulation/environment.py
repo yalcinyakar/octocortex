@@ -12,6 +12,7 @@ from octocortex.core.octoir import ConceptCode, SemanticPacket, UnitCode
 from octocortex.core.workspace import GlobalWorkspace
 from octocortex.learning.adapter import SparseSemanticAdapter
 from octocortex.learning.backup_planner import DistilledBackupPlanner
+from octocortex.simulation.worlds import DEFAULT_WORLD, TRAIN_WORLDS, WorldSpec
 
 
 class OctoSimulation:
@@ -20,12 +21,16 @@ class OctoSimulation:
         seed: int = 7,
         sensor_noise: float = 0.0,
         disabled_units: frozenset[UnitCode] = frozenset(),
+        world: WorldSpec = DEFAULT_WORLD,
+        backup_training_worlds: tuple[WorldSpec, ...] = TRAIN_WORLDS,
     ) -> None:
         if not 0.0 <= sensor_noise <= 1.0:
             raise ValueError("sensor_noise must be between 0 and 1")
         self.seed = seed
         self.sensor_noise = sensor_noise
         self.disabled_units = frozenset(disabled_units)
+        self.world = world
+        self.backup_training_worlds = backup_training_worlds
         self.random = random.Random(seed)
         self.reset()
 
@@ -41,18 +46,17 @@ class OctoSimulation:
         self.memory = MemoryArm(self.adapter)
         self.navigation = NavigationArm(self.adapter)
         self.tick = 0
-        self.agent = (0, 0)
-        self.goal = (11, 7)
-        self.obstacles = {
-            (2, 0), (2, 1), (2, 2), (4, 2), (5, 2), (6, 2),
-            (6, 3), (6, 4), (8, 4), (9, 4), (10, 4), (8, 6),
-        }
+        self.agent = self.world.start
+        self.visited_cells = {self.agent}
+        self.goal = self.world.goal
+        self.obstacles = set(self.world.obstacles)
         self.backup_planners = {
             UnitCode.MEMORY: DistilledBackupPlanner(UnitCode.MEMORY, seed=41),
             UnitCode.PERCEPTION: DistilledBackupPlanner(UnitCode.PERCEPTION, seed=43),
         }
+        training_states = tuple(world.state() for world in self.backup_training_worlds)
         for planner in self.backup_planners.values():
-            planner.distill(self._state())
+            planner.distill_many(training_states)
         self.collisions = 0
         self.done = False
         self.last_decision = None
@@ -60,7 +64,7 @@ class OctoSimulation:
 
     def _state(self) -> dict:
         return {
-            "size": [12, 8],
+            "size": list(self.world.size),
             "agent": list(self.agent),
             "goal": list(self.goal),
             "obstacles": [list(cell) for cell in sorted(self.obstacles)],
@@ -97,6 +101,15 @@ class OctoSimulation:
             remembered_obstacles = {
                 tuple(cell) for cell in perceived_state["obstacles"]
             } | set(self.memory.bad_cells)
+            width, height = perceived_state["size"]
+            candidate_cells = self.navigation.next_cells(self.agent).values()
+            has_unvisited_exit = any(
+                0 <= cell[0] < width and 0 <= cell[1] < height
+                and cell not in remembered_obstacles and cell not in self.visited_cells
+                for cell in candidate_cells
+            )
+            if has_unvisited_exit:
+                remembered_obstacles |= self.visited_cells - {self.agent, self.goal}
             backup_state = {
                 **perceived_state,
                 "obstacles": [list(cell) for cell in sorted(remembered_obstacles)],
@@ -133,7 +146,7 @@ class OctoSimulation:
                 self.memory.remember_collision(target)
                 learned = self.adapter.encode_semantic(
                     UnitCode.EXECUTION, ConceptCode.COLLISION,
-                    (target[0] / 11, target[1] / 7, 1.0, 1.0),
+                    (target[0] / max(1, width - 1), target[1] / max(1, height - 1), 1.0, 1.0),
                 )
                 self.bus.observe(SemanticPacket(
                     source=UnitCode.EXECUTION,
@@ -152,12 +165,13 @@ class OctoSimulation:
                 ))
             else:
                 self.agent = target
+                self.visited_cells.add(self.agent)
 
         if self.agent == self.goal:
             self.done = True
             learned = self.adapter.encode_semantic(
                 UnitCode.EXECUTION, ConceptCode.GOAL_REACHED,
-                (self.goal[0] / 11, self.goal[1] / 7, 1.0),
+                (self.goal[0] / max(1, width - 1), self.goal[1] / max(1, height - 1), 1.0),
             )
             self.bus.observe(SemanticPacket(
                 source=UnitCode.EXECUTION,

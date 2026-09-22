@@ -53,6 +53,13 @@ deterministic seeds and four fault scenarios:
 python -m benchmarks.architecture_comparison --trials 100
 ```
 
+Measure backup-policy transfer from 32 procedural training worlds to 100
+disjoint, previously unseen worlds:
+
+```bash
+python -m benchmarks.generalization --train-worlds 32 --test-worlds 100
+```
+
 The energy number is a logical operation-cost proxy, not joules. Runtime is
 implementation-specific Python wall time and must not be presented as a
 hardware performance result.
@@ -88,5 +95,9 @@ current benchmark shows lower logical energy for OctoCortex. Its capability
 router now reassigns route planning to memory, then perception, when the primary
 planning unit fails. Memory and perception use separate distilled linear-policy
 weights during failover; the primary navigation implementation is not called.
-The next milestone is transfer learning across unseen worlds rather than
-distillation on one fixed map.
+Backup policies are now distilled on 32 procedural worlds instead of the demo
+map. On the held-out 100-world suite, both independent backup owners reach 98%
+success with 99% action agreement. The generator guarantees a descending
+route, so this establishes transfer but not hard-maze reasoning. The next
+milestone is partial observability and worlds that require temporary movement
+away from the goal. See [the technical roadmap](docs/roadmap.md).

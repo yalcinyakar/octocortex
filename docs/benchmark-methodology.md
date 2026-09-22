@@ -37,8 +37,26 @@ dashboard table is a checked-in result from 100 seeds and must be regenerated
 when policies, costs, or scenarios change.
 
 The current failover transfers ownership to independently parameterized backup
-policies. Memory and perception each distill route examples into their own
-five-weight linear model before execution. Ablation tests replace the primary
-planner with a deliberate failure and verify that the backup still reaches the
-goal. This demonstrates independent execution, but not yet generalization to
-maps absent from the distillation set.
+policies. Memory and perception each use four action-specific linear heads with
+five features per head. Ablation tests replace the primary planner with a
+deliberate failure and verify that the backup still reaches the goal.
+
+## Held-out world transfer
+
+`benchmarks.generalization` separates 32 procedural training worlds (seeds
+1000–1031) from 100 test worlds (seeds 10000–10099). World fingerprints are
+checked for zero overlap. The fixed dashboard map is not part of training.
+
+| Split | Owner | Worlds | Success | Steps | Collisions | Action agreement |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| train | memory | 32 | 96.9% | 18.39 | 0.031 | 100% |
+| train | perception | 32 | 93.8% | 18.33 | 0.062 | 100% |
+| unseen | memory | 100 | 98.0% | 18.10 | 0.020 | 99% |
+| unseen | perception | 100 | 98.0% | 18.20 | 0.020 | 99% |
+
+The generator guarantees that each free cell has at least one neighbor closer
+to the goal. These results therefore demonstrate out-of-sample transfer of the
+local policy, not maze solving, long-horizon credit assignment, or general
+intelligence. Safety spikes remain observable but issue a hard WAIT veto only
+when all four neighboring cells are occupied; proximity alone cannot deadlock
+the agent.

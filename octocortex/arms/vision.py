@@ -49,7 +49,10 @@ class VisionArm:
             )
         ]
         proposals: list[Proposal] = []
-        if spike and adjacent:
+        # Nearby obstacles remain globally visible, but a hard WAIT veto is
+        # reserved for a genuinely trapped cell. Otherwise the route proposal
+        # already excludes occupied neighbors and can move safely away.
+        if spike and adjacent == 4:
             proposals.append(Proposal(
                 arm=self.unit,
                 action=ActionCode.WAIT,

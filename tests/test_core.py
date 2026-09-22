@@ -1,6 +1,7 @@
 import unittest
 
 from benchmarks.architecture_comparison import run_benchmark
+from benchmarks.generalization import run_generalization
 from octocortex.core.arbitrator import Arbitrator
 from octocortex.core.capabilities import CapabilityCode, CapabilityRouter
 from octocortex.core.event_bus import SparseEventBus
@@ -10,6 +11,7 @@ from octocortex.simulation.environment import OctoSimulation
 from octocortex.learning.adapter import SparseSemanticAdapter
 from octocortex.learning.quantizer import OnlineVectorQuantizer
 from octocortex.snn.network import LIFNeuron
+from octocortex.simulation.worlds import TEST_WORLDS, TRAIN_WORLDS
 
 
 class CoreTests(unittest.TestCase):
@@ -131,6 +133,17 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(len(report["summary"]), 12)
         clean = [row for row in report["summary"] if row["scenario"] == "clean"]
         self.assertTrue(all(row["success_rate"] == 1.0 for row in clean))
+
+    def test_procedural_train_test_worlds_do_not_overlap(self):
+        train = {world.fingerprint for world in TRAIN_WORLDS}
+        test = {world.fingerprint for world in TEST_WORLDS}
+        self.assertFalse(train & test)
+
+    def test_backup_policy_transfers_to_unseen_worlds(self):
+        report = run_generalization(train_count=4, test_count=8)
+        unseen = [row for row in report["results"] if row["split"] == "unseen"]
+        self.assertEqual(report["split_overlap"], 0)
+        self.assertTrue(all(row["success_rate"] >= 0.75 for row in unseen))
 
 
 if __name__ == "__main__":
