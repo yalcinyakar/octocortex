@@ -9,6 +9,10 @@ OctoCortex is a small, executable experiment in hybrid AI architecture:
 
 The first demo is a grid-world agent. The navigation arm tries to reach a goal, the visual arm emits danger spikes near obstacles, and the memory arm learns which cells have caused collisions. The browser UI exposes every proposal and arbitration decision.
 
+## Live demo
+
+Run OctoCortex directly in the browser: <https://yalcinyakar.github.io/octocortex/>
+
 ## Run
 
 Requires Python 3.11+ and no third-party packages.
@@ -48,4 +52,3 @@ The architecture is intentionally measurable. The API reports:
 - SNN spikes and membrane potential.
 
 This is an architecture simulator, not yet a biological fidelity claim. The next useful milestone is a benchmark harness comparing this hybrid against a centralized policy and a fully distributed policy under sensor noise and arm failure.
-
