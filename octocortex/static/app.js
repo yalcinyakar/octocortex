@@ -10,9 +10,10 @@ const MOVES={[ACTION.UP]:[0,-1],[ACTION.DOWN]:[0,1],[ACTION.LEFT]:[-1,0],[ACTION
 const BENCHMARK_RESULTS=[
   ['clean','centralized',1,18,0,11.160],['clean','distributed',1,18,0,12.600],['clean','octocortex',1,18,0,5.176],
   ['sensor noise','centralized',1,22.38,.06,13.876],['sensor noise','distributed',1,22.38,.06,15.666],['sensor noise','octocortex',.99,23.33,.01,8.945],
-  ['component failure','centralized',.52,18,0,29.611],['component failure','distributed',1,18,0,10.595],['component failure','octocortex',.84,18,0,6.400],
-  ['combined','centralized',.52,22.54,.05,31.074],['combined','distributed',1,22.38,.06,13.199],['combined','octocortex',.83,22.96,.01,9.891],
+  ['component failure','centralized',.52,18,0,29.611],['component failure','distributed',1,18,0,10.595],['component failure','octocortex',1,18,0,4.924],
+  ['combined','centralized',.52,22.54,.05,31.074],['combined','distributed',1,22.38,.06,13.199],['combined','octocortex',.99,23.13,.01,8.294],
 ];
+const CAPABILITY={PLAN_ROUTE:1};
 const key = cell => cell.join(',');
 const reasonText=(code,value=0)=>code===REASON.GOAL_PROGRESS?`move reduces goal distance to ${value}`:code===REASON.DANGER_SPIKE?'local danger neuron spiked':code===REASON.COLLISION_MEMORY?`recalled ${value} collision(s)`:code===REASON.NO_VALID_MOVE?'no valid move':'no semantic reason code';
 const packetTrace=p=>({source:UNIT_NAME[p.source],kind:CONCEPT_NAME[p.concept],salience:p.salience,payload:{concept_id:p.concept,semantic_code:p.semantic_code,quantization_error:p.quantization_error,confidence:p.confidence,uncertainty:p.uncertainty,urgency:p.urgency,risk:p.risk,state_delta:p.state_delta,latent:p.latent},tick:p.tick});
@@ -48,6 +49,11 @@ class OnlineVectorQuantizer {
   get codesUsed(){return this.usage.filter(Boolean).length}
 }
 
+class CapabilityRouter {
+  constructor(){this.routes={[CAPABILITY.PLAN_ROUTE]:[UNIT.PLANNING,UNIT.MEMORY,UNIT.PERCEPTION]};this.assignments=new Map();this.handoffs=0}
+  resolve(capability,available){const chain=this.routes[capability],owner=chain.find(unit=>available.has(unit));if(owner===undefined)return null;const previous=this.assignments.has(capability)?this.assignments.get(capability):chain[0];if(owner!==previous)this.handoffs++;this.assignments.set(capability,owner);return {capability,owner,primary:chain[0],delegated:owner!==chain[0]}}
+}
+
 class SemanticAdapter {
   constructor(inputDim=8,latentDim=4,activeLatents=2,learningRate=.04,seed=17){
     this.inputDim=inputDim;this.latentDim=latentDim;this.activeLatents=activeLatents;this.learningRate=learningRate;this.steps=0;this.totalLoss=0;this.lastLoss=0;
@@ -74,12 +80,12 @@ class SemanticAdapter {
 }
 
 class OctoSimulation {
-  constructor(){this.reset()}
+  constructor(){this.disabledUnits=new Set();this.reset()}
   reset(){
     this.tick=0;this.agent=[0,0];this.goal=[11,7];
     this.obstacles=[[2,0],[2,1],[2,2],[4,2],[5,2],[6,2],[6,3],[6,4],[8,4],[9,4],[10,4],[8,6]];
     this.obstacleSet=new Set(this.obstacles.map(key));this.collisions=0;this.done=false;this.lastDecision=null;
-    this.bus=new SparseEventBus();this.neuron=new LIFNeuron();this.memory=new Map();this.adapter=new SemanticAdapter();
+    this.bus=new SparseEventBus();this.neuron=new LIFNeuron();this.memory=new Map();this.adapter=new SemanticAdapter();this.capabilities=new CapabilityRouter();
     this.localEnergy=0;this.globalEnergy=0;this.attention=[];return this.snapshot();
   }
   packet(source,concept,salience,values={}){return {source,target:UNIT.WORKSPACE,concept,tick:this.tick,semantic_code:0,quantization_error:0,confidence:1,uncertainty:0,salience,urgency:0,risk:0,expected_reward:0,ttl_ms:0,state_delta:[],latent:[],flags:0,...values}}
@@ -121,7 +127,11 @@ class OctoSimulation {
   }
   step(){
     if(this.done)return this.snapshot();this.tick++;
-    const nav=this.navigation(), visual=this.vision(), memory=this.recall(nav.cells);
+    const available=new Set([UNIT.PLANNING,UNIT.MEMORY,UNIT.PERCEPTION].filter(unit=>!this.disabledUnits.has(unit))), planningLease=this.capabilities.resolve(CAPABILITY.PLAN_ROUTE,available);
+    const nav=planningLease?this.navigation():{events:[],proposals:[],cells:this.nextCells()};
+    if(planningLease?.delegated){nav.events.forEach(event=>event.source=planningLease.owner);nav.proposals.forEach(proposal=>proposal.arm=planningLease.owner)}
+    const visual=this.disabledUnits.has(UNIT.PERCEPTION)?{events:[],proposals:[],snn:{danger:0,spike:false,potential:this.neuron.potential}}:this.vision();
+    const memory=this.disabledUnits.has(UNIT.MEMORY)?{events:[],proposals:[]}:this.recall(nav.cells);
     const rawEvents=[...nav.events,...visual.events,...memory.events];
     const observed=rawEvents.map(event=>({...packetTrace(event),published:this.bus.observe(event)}));
     const salient=this.bus.drain();this.attention=[...salient].sort((a,b)=>b.salience-a.salience).slice(0,5);
@@ -133,17 +143,17 @@ class OctoSimulation {
     }
     if(key(this.agent)===key(this.goal)){this.done=true;const learned=this.adapter.encodeSemantic(UNIT.EXECUTION,CONCEPT.GOAL_REACHED,[this.goal[0]/11,this.goal[1]/7,1]);executionEvent=this.packet(UNIT.EXECUTION,CONCEPT.GOAL_REACHED,1,{expected_reward:1,ttl_ms:1000,state_delta:this.goal,latent:learned.quantizedLatent,semantic_code:learned.semanticCode,quantization_error:learned.quantizationError})}
     if(executionEvent)observed.push({...packetTrace(executionEvent),published:this.bus.observe(executionEvent)});
-    const activity=(unit,label,events,unitProposals,detail)=>({unit:UNIT_NAME[unit],label,status:this.lastDecision.winner===unit?'winner':unitProposals.length?'proposing':'active',detail,events:events.map(event=>observed.find(item=>item.source===UNIT_NAME[unit]&&item.kind===CONCEPT_NAME[event.concept])),proposals:unitProposals.map(proposalTrace)});
+    const activity=(unit,label,events,unitProposals,detail)=>({unit:UNIT_NAME[unit],label,status:unitProposals.length&&this.lastDecision.winner===unit?'winner':unitProposals.length?'proposing':'active',detail,events:events.map(event=>observed.find(item=>item.source===UNIT_NAME[unit]&&item.kind===CONCEPT_NAME[event.concept])),proposals:unitProposals.map(proposalTrace)});
     const executionEvents=executionEvent?[executionEvent]:[];
     const unitActivity=[
-      activity(UNIT.PLANNING,'Planning',nav.events,nav.proposals,`${Object.values(nav.cells).length} candidate cells evaluated`),
+      activity(planningLease?.owner??UNIT.PLANNING,planningLease?.delegated?`Planning → ${UNIT_NAME[planningLease.owner]}`:'Planning',nav.events,nav.proposals,planningLease?`${Object.values(nav.cells).length} candidate cells evaluated`:'no healthy planning-capable unit'),
       activity(UNIT.PERCEPTION,'Perception',visual.events,visual.proposals,`danger ${visual.snn.danger.toFixed(2)} · membrane ${visual.snn.potential.toFixed(2)} · spike ${visual.snn.spike?'yes':'no'}`),
       activity(UNIT.MEMORY,'Memory',memory.events,memory.proposals,`${this.memory.size} collision cells stored`),
       activity(UNIT.EXECUTION,'Execution',executionEvents,[],collision?'movement blocked':this.done?'goal confirmed':`position committed to ${this.agent.join(':')}`),
     ];
-    return {...this.snapshot(),transition:{collision,snn:visual.snn,all_events:observed,salient_events:salient.map(packetTrace),unit_activity:unitActivity,pipeline:{observed:observed.length,published:observed.filter(event=>event.published).length,filtered:observed.filter(event=>!event.published).length,proposals:proposals.length,adapter_updates:this.adapter.steps}}};
+    return {...this.snapshot(),transition:{collision,snn:visual.snn,planning_owner:planningLease?UNIT_NAME[planningLease.owner]:null,planning_delegated:Boolean(planningLease?.delegated),all_events:observed,salient_events:salient.map(packetTrace),unit_activity:unitActivity,pipeline:{observed:observed.length,published:observed.filter(event=>event.published).length,filtered:observed.filter(event=>!event.published).length,proposals:proposals.length,adapter_updates:this.adapter.steps}}};
   }
-  snapshot(){return {size:[12,8],agent:[...this.agent],goal:[...this.goal],obstacles:this.obstacles.map(cell=>[...cell]),tick:this.tick,done:this.done,collisions:this.collisions,decision:this.lastDecision?decisionTrace(this.lastDecision):null,attention:this.attention.map(packetTrace),metrics:{observations:this.bus.observations,published_events:this.bus.published,event_sparsity:+this.bus.sparsity.toFixed(3),snn_spikes:this.neuron.spikes,local_energy:+this.localEnergy.toFixed(3),global_energy:+this.globalEnergy.toFixed(3),adapter_loss:+this.adapter.lastLoss.toFixed(6),adapter_mean_loss:+this.adapter.meanLoss.toFixed(6),adapter_steps:this.adapter.steps,semantic_codes_used:this.adapter.quantizer.codesUsed,quantization_error:+this.adapter.quantizer.lastError.toFixed(6)}}}
+  snapshot(){return {size:[12,8],agent:[...this.agent],goal:[...this.goal],obstacles:this.obstacles.map(cell=>[...cell]),tick:this.tick,done:this.done,collisions:this.collisions,decision:this.lastDecision?decisionTrace(this.lastDecision):null,attention:this.attention.map(packetTrace),metrics:{observations:this.bus.observations,published_events:this.bus.published,event_sparsity:+this.bus.sparsity.toFixed(3),snn_spikes:this.neuron.spikes,local_energy:+this.localEnergy.toFixed(3),global_energy:+this.globalEnergy.toFixed(3),adapter_loss:+this.adapter.lastLoss.toFixed(6),adapter_mean_loss:+this.adapter.meanLoss.toFixed(6),adapter_steps:this.adapter.steps,semantic_codes_used:this.adapter.quantizer.codesUsed,quantization_error:+this.adapter.quantizer.lastError.toFixed(6),capability_handoffs:this.capabilities.handoffs,planning_owner:UNIT_NAME[this.capabilities.assignments.get(CAPABILITY.PLAN_ROUTE)??UNIT.PLANNING]}}}
 }
 
 const simulation=new OctoSimulation();let timer=null;
@@ -153,14 +163,15 @@ function render(s){
     const d=document.createElement('div');d.className='cell';
     if(obs.has(`${x},${y}`))d.classList.add('wall');if(x===s.goal[0]&&y===s.goal[1])d.classList.add('goal');if(x===s.agent[0]&&y===s.agent[1])d.classList.add('agent','pulse');$('#grid').appendChild(d);
   }
-  const m=s.metrics;$('#metrics').innerHTML=[['Tick',s.tick],['Spikes',m.snn_spikes],['Published',m.published_events],['Adapter loss',m.adapter_loss],['VQ error',m.quantization_error],['Codes used',`${m.semantic_codes_used}/8`],['Local energy',m.local_energy],['Global energy',m.global_energy]].map(([k,v])=>`<div class="metric"><b>${v}</b><span>${k}</span></div>`).join('');
+  const m=s.metrics;$('#metrics').innerHTML=[['Tick',s.tick],['Spikes',m.snn_spikes],['Published',m.published_events],['Adapter loss',m.adapter_loss],['VQ error',m.quantization_error],['Codes used',`${m.semantic_codes_used}/8`],['Handoffs',m.capability_handoffs],['Local energy',m.local_energy],['Global energy',m.global_energy]].map(([k,v])=>`<div class="metric"><b>${v}</b><span>${k}</span></div>`).join('');
   $('#status').textContent=s.done?'GOAL REACHED':`POS ${s.agent.join(':')}`;$('#sparsity').textContent=`${Math.round(m.event_sparsity*100)}% FILTERED`;
   if(s.decision){$('#winner').textContent=s.decision.winner;$('#decision').className='decision';$('#decision').innerHTML=`<strong>${s.decision.action}</strong><small>${s.decision.reason} · score ${s.decision.score}</small>`;$('#proposals').innerHTML=s.decision.proposals.map(p=>`<div class="proposal"><span class="arm">${p.arm}</span><div>${p.reason}<div class="bar"><i style="width:${Math.round(p.confidence*100)}%"></i></div></div><b>${p.action}</b></div>`).join('')}else{$('#winner').textContent='IDLE';$('#decision').className='decision empty';$('#decision').textContent='Waiting for proposals.';$('#proposals').innerHTML=''}
   const activity=s.transition?.unit_activity||[];$('#activities').innerHTML=activity.length?activity.map(a=>{const event=a.events[0],proposal=a.proposals[0];return `<article class="activity ${a.status}"><header><b>${a.label}</b><span>${a.status}</span></header><p>${a.detail}</p><dl><div><dt>event</dt><dd>${event?event.kind:'none'}</dd></div><div><dt>semantic code</dt><dd>${event?`C${event.payload.semantic_code} · ε ${event.payload.quantization_error.toFixed(3)}`:'—'}</dd></div><div><dt>route</dt><dd>${event?(event.published?'published':'filtered'):'none'}</dd></div><div><dt>proposal</dt><dd>${proposal?proposal.action:'none'}</dd></div><div><dt>quantized latent</dt><dd>${event?shortLatent(event.payload.latent).join(' · '):'—'}</dd></div></dl></article>`}).join(''):'<div class="empty">Step the simulation to inspect local work.</div>';
   const ev=s.transition?.all_events||s.attention||[];$('#events').innerHTML=ev.length?ev.map(e=>`<div class="event ${e.published===false?'filtered':'published'}"><b>${e.source}/${e.kind}</b><span>${e.published===false?'FILTERED':'PUBLISHED'} · ${e.salience.toFixed(2)}</span><small>code C${e.payload.semantic_code} · VQ ε ${e.payload.quantization_error.toFixed(3)} · latent [${shortLatent(e.payload.latent).join(', ')}] · Δ [${e.payload.state_delta.join(', ')}] · risk ${e.payload.risk.toFixed(2)} · urgency ${e.payload.urgency.toFixed(2)}</small></div>`).join(''):'<div class="empty">No observations this tick.</div>';if(s.done&&timer)toggleRun();
 }
 function step(){render(simulation.step())}function reset(){render(simulation.reset())}
+function togglePlanningFault(){if(simulation.disabledUnits.has(UNIT.PLANNING)){simulation.disabledUnits.delete(UNIT.PLANNING);$('#fault').textContent='Fail Planning';$('#fault').classList.remove('active')}else{simulation.disabledUnits.add(UNIT.PLANNING);$('#fault').textContent='Restore Planning';$('#fault').classList.add('active')}render(simulation.snapshot())}
 function toggleRun(){if(timer){clearInterval(timer);timer=null;$('#run').textContent='Run';$('#run').classList.remove('active')}else{timer=setInterval(step,450);$('#run').textContent='Pause';$('#run').classList.add('active')}}
 function renderBenchmark(){const target=$('#benchmark');if(!target)return;target.innerHTML=`<table><thead><tr><th>Scenario</th><th>Architecture</th><th>Success</th><th>Steps*</th><th>Collisions</th><th>Energy</th></tr></thead><tbody>${BENCHMARK_RESULTS.map(([scenario,architecture,success,steps,collisions,energy])=>`<tr class="${architecture==='octocortex'?'ours':''}"><td>${scenario}</td><td>${architecture}</td><td>${Math.round(success*100)}%</td><td>${steps}</td><td>${collisions}</td><td>${energy.toFixed(3)}</td></tr>`).join('')}</tbody></table><small>* Steps are averaged over successful episodes. Component outage probability: 35%; sensor noise: 15%.</small>`}
-if(typeof module!=='undefined')module.exports={UNIT,CONCEPT,ACTION,REASON,BENCHMARK_RESULTS,LIFNeuron,SparseEventBus,OnlineVectorQuantizer,SemanticAdapter,OctoSimulation};
-if(typeof document!=='undefined'){$('#step').onclick=step;$('#run').onclick=toggleRun;$('#reset').onclick=reset;render(simulation.snapshot());renderBenchmark()}
+if(typeof module!=='undefined')module.exports={UNIT,CONCEPT,ACTION,REASON,CAPABILITY,BENCHMARK_RESULTS,LIFNeuron,SparseEventBus,CapabilityRouter,OnlineVectorQuantizer,SemanticAdapter,OctoSimulation};
+if(typeof document!=='undefined'){$('#step').onclick=step;$('#run').onclick=toggleRun;$('#fault').onclick=togglePlanningFault;$('#reset').onclick=reset;render(simulation.snapshot());renderBenchmark()}

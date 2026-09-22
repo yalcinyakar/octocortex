@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import random
+from dataclasses import replace
 
 from octocortex.arms.memory import MemoryArm
 from octocortex.arms.navigation import MOVES, NavigationArm
 from octocortex.arms.vision import VisionArm
 from octocortex.core.event_bus import SparseEventBus
+from octocortex.core.capabilities import CapabilityCode, CapabilityRouter
 from octocortex.core.models import ActionCode
 from octocortex.core.octoir import ConceptCode, SemanticPacket, UnitCode
 from octocortex.core.workspace import GlobalWorkspace
@@ -33,6 +35,7 @@ class OctoSimulation:
         self.random.seed(self.seed)
         self.bus = SparseEventBus(threshold=0.5)
         self.workspace = GlobalWorkspace()
+        self.capabilities = CapabilityRouter()
         self.adapter = SparseSemanticAdapter()
         self.vision = VisionArm(self.adapter)
         self.memory = MemoryArm(self.adapter)
@@ -77,11 +80,16 @@ class OctoSimulation:
         state = self._state()
         perceived_state = self._perceived_state()
 
-        if UnitCode.PLANNING in self.disabled_units:
+        available = {UnitCode.PLANNING, UnitCode.MEMORY, UnitCode.PERCEPTION} - set(self.disabled_units)
+        planning_lease = self.capabilities.resolve(CapabilityCode.PLAN_ROUTE, available)
+        if planning_lease is None:
             nav_events, nav_proposals = [], []
             next_cells = self.navigation.next_cells(self.agent)
         else:
             nav_events, nav_proposals, next_cells = self.navigation.propose(perceived_state, self.tick)
+            if planning_lease.delegated:
+                nav_events = [replace(packet, source=planning_lease.owner) for packet in nav_events]
+                nav_proposals = [replace(proposal, arm=planning_lease.owner) for proposal in nav_proposals]
         if UnitCode.PERCEPTION in self.disabled_units:
             visual_events, visual_proposals = [], []
             snn_state = {"danger": 0.0, "spike": False, "potential": self.vision.network.neuron.potential}
@@ -157,6 +165,8 @@ class OctoSimulation:
             "collision": collision,
             "snn": snn_state,
             "salient_events": [packet.to_trace() for packet in salient],
+            "planning_owner": planning_lease.owner.name.lower() if planning_lease else None,
+            "planning_delegated": planning_lease.delegated if planning_lease else False,
         }
         return snapshot
 
@@ -186,5 +196,9 @@ class OctoSimulation:
                 "quantization_error": round(self.adapter.quantizer.last_error, 6),
                 "sensor_noise": self.sensor_noise,
                 "disabled_units": len(self.disabled_units),
+                "capability_handoffs": self.capabilities.handoffs,
+                "planning_owner": self.capabilities.assignments.get(
+                    CapabilityCode.PLAN_ROUTE, UnitCode.PLANNING
+                ).name.lower(),
             },
         }

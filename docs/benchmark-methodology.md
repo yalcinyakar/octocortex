@@ -9,7 +9,9 @@ component outage.
 - **Distributed:** planning, reactive perception, and collision-memory voters
   choose an action without a global workspace.
 - **OctoCortex:** the production simulation uses its sparse event bus, learned
-  adapter, vector quantizer, proposals, and global workspace.
+  adapter, vector quantizer, proposals, global workspace, and capability
+  router. Route planning is leased to memory or perception if its primary unit
+  is unavailable.
 
 ## Scenarios
 
@@ -33,3 +35,7 @@ than a physical measurement. Python runtime compares these reference
 implementations only; it does not establish hardware efficiency. The embedded
 dashboard table is a checked-in result from 100 seeds and must be regenerated
 when policies, costs, or scenarios change.
+
+The current failover transfers ownership and attribution of the shared
+reference planning capability. It demonstrates architectural continuity, not
+yet independently learned backup-planning weights.

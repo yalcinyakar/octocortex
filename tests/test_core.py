@@ -2,6 +2,7 @@ import unittest
 
 from benchmarks.architecture_comparison import run_benchmark
 from octocortex.core.arbitrator import Arbitrator
+from octocortex.core.capabilities import CapabilityCode, CapabilityRouter
 from octocortex.core.event_bus import SparseEventBus
 from octocortex.core.models import ActionCode, Proposal, ReasonCode
 from octocortex.core.octoir import ConceptCode, SemanticPacket, UnitCode
@@ -102,6 +103,26 @@ class CoreTests(unittest.TestCase):
         first_path = [first.step()["agent"] for _ in range(12)]
         second_path = [second.step()["agent"] for _ in range(12)]
         self.assertEqual(first_path, second_path)
+
+    def test_planning_capability_fails_over_to_memory(self):
+        router = CapabilityRouter()
+        lease = router.resolve(
+            CapabilityCode.PLAN_ROUTE,
+            {UnitCode.MEMORY, UnitCode.PERCEPTION},
+        )
+        self.assertEqual(lease.owner, UnitCode.MEMORY)
+        self.assertTrue(lease.delegated)
+        self.assertEqual(router.handoffs, 1)
+
+    def test_simulation_reaches_goal_after_planning_failure(self):
+        simulation = OctoSimulation(disabled_units=frozenset({UnitCode.PLANNING}))
+        for _ in range(80):
+            state = simulation.step()
+            if state["done"]:
+                break
+        self.assertTrue(state["done"])
+        self.assertEqual(state["metrics"]["planning_owner"], "memory")
+        self.assertEqual(state["metrics"]["capability_handoffs"], 1)
 
     def test_architecture_benchmark_covers_all_cases(self):
         report = run_benchmark(trials=3, max_steps=80)

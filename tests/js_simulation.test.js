@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const {UNIT, CONCEPT, BENCHMARK_RESULTS, LIFNeuron, SparseEventBus, OnlineVectorQuantizer, SemanticAdapter, OctoSimulation} = require('../octocortex/static/app.js');
+const {UNIT, CONCEPT, CAPABILITY, BENCHMARK_RESULTS, LIFNeuron, SparseEventBus, CapabilityRouter, OnlineVectorQuantizer, SemanticAdapter, OctoSimulation} = require('../octocortex/static/app.js');
 
 const neuron = new LIFNeuron(1, 1);
 assert.equal(neuron.step(.4), false);
@@ -17,6 +17,11 @@ const losses = Array.from({length:200}, () => adapter.encodeAndLearn(vector).los
 const encoded = adapter.encodeAndLearn(vector);
 assert.ok(losses.slice(-20).reduce((a,b)=>a+b)/20 < losses.slice(0,20).reduce((a,b)=>a+b)/20);
 assert.ok(encoded.latent.filter(value => value !== 0).length <= 2);
+
+const router = new CapabilityRouter();
+const lease = router.resolve(CAPABILITY.PLAN_ROUTE, new Set([UNIT.MEMORY, UNIT.PERCEPTION]));
+assert.equal(lease.owner, UNIT.MEMORY);
+assert.equal(lease.delegated, true);
 
 const quantizer = new OnlineVectorQuantizer();
 const codes = Array.from({length:100}, () => quantizer.quantize([0,-.2,-.18,0]).code);
@@ -40,5 +45,12 @@ assert.deepEqual(state.agent, state.goal);
 assert.ok(state.metrics.observations > state.metrics.published_events);
 assert.ok(state.metrics.adapter_steps > 0);
 assert.equal(BENCHMARK_RESULTS.length, 12);
+
+const failedSimulation = new OctoSimulation();
+failedSimulation.disabledUnits.add(UNIT.PLANNING);
+for(let tick=0;tick<80&&!failedSimulation.done;tick++) failedSimulation.step();
+assert.equal(failedSimulation.done, true);
+assert.equal(failedSimulation.snapshot().metrics.planning_owner, 'memory');
+assert.equal(failedSimulation.snapshot().metrics.capability_handoffs, 1);
 
 console.log('OctoCortex browser simulation tests passed');

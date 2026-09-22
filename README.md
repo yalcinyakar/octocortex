@@ -84,6 +84,7 @@ The architecture is intentionally measurable. The API reports:
 - vector-quantization error and shared semantic-code utilization.
 
 This is an architecture simulator, not yet a biological fidelity claim. The
-current benchmark shows lower logical energy for OctoCortex, but also exposes a
-planning-arm dependency: success falls under injected component failure. The
-next milestone is redundant planning and dynamic arm reassignment.
+current benchmark shows lower logical energy for OctoCortex. Its capability
+router now reassigns route planning to memory, then perception, when the primary
+planning unit fails. The next milestone is learned capability transfer instead
+of executing the shared reference planner under a new owner.
