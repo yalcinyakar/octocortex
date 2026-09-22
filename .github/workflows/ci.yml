@@ -19,3 +19,5 @@ jobs:
           python-version: "3.11"
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
+      - name: Run browser simulation tests
+        run: node tests/js_simulation.test.js

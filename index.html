@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Interactive OctoCortex global-workspace and distributed SNN simulation">
+  <title>OctoCortex Lab</title>
+  <link rel="stylesheet" href="octocortex/static/styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div><span class="eyebrow">NEUROMORPHIC LAB / 001</span><h1>OctoCortex</h1></div>
+      <div class="controls"><button id="step">Step</button><button id="run">Run</button><button id="reset" class="quiet">Reset</button></div>
+    </header>
+    <section class="metrics" id="metrics"></section>
+    <section class="layout">
+      <div class="panel world-panel">
+        <div class="panel-title"><span>Environment</span><span id="status">READY</span></div>
+        <div id="grid" class="grid"></div>
+        <div class="legend"><span><i class="agent"></i>Agent</span><span><i class="goal"></i>Goal</span><span><i class="wall"></i>Obstacle</span></div>
+      </div>
+      <div class="stack">
+        <div class="panel">
+          <div class="panel-title"><span>Global Workspace</span><span id="winner">IDLE</span></div>
+          <div id="decision" class="decision empty">Waiting for proposals.</div>
+        </div>
+        <div class="panel grow">
+          <div class="panel-title"><span>Arm Proposals</span><span>LOCAL → GLOBAL</span></div>
+          <div id="proposals" class="proposals"></div>
+        </div>
+      </div>
+    </section>
+    <section class="panel event-panel">
+      <div class="panel-title"><span>Sparse Event Bus</span><span id="sparsity">—</span></div>
+      <div id="events" class="events"><div class="empty">No salient events yet.</div></div>
+    </section>
+  </main>
+  <script src="octocortex/static/app.js"></script>
+</body>
+</html>
