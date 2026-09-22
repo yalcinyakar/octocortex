@@ -7,6 +7,11 @@ OctoCortex is a small, executable experiment in hybrid AI architecture:
 - a tiny **spiking neural network (SNN)** turns local sensory pressure into sparse events;
 - an **arbitrator** chooses between proposals using confidence, reward, risk, urgency, and energy cost.
 
+Processing units communicate through **OctoIR**, a typed language-free
+intermediate representation. Human-readable labels are decoded only at the
+dashboard boundary; the internal event fabric transports numeric concept IDs,
+state deltas, confidence/risk signals, and sparse latent vectors.
+
 The first demo is a grid-world agent. The navigation arm tries to reach a goal, the visual arm emits danger spikes near obstacles, and the memory arm learns which cells have caused collisions. The browser UI exposes every proposal and arbitration decision.
 
 ## Live demo
@@ -29,12 +34,19 @@ Then open <http://127.0.0.1:8000>.
 python -m unittest discover -s tests -v
 ```
 
+Compare the compact OctoIR wire packet with its human-readable trace:
+
+```bash
+python -m benchmarks.octoir_size
+```
+
 ## Project shape
 
 ```text
 octocortex/
 ├── arms/          # local perception, memory, and navigation policies
 ├── core/          # event bus, proposals, workspace, arbitration
+├── docs/          # OctoIR protocol specification
 ├── simulation/    # deterministic grid-world experiment
 ├── snn/           # minimal leaky-integrate-and-fire network
 ├── static/        # live dashboard

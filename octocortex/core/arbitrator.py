@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from .models import Decision, Proposal
+from .models import ActionCode, Decision, Proposal, ReasonCode
+from .octoir import UnitCode
 
 
 class Arbitrator:
@@ -17,17 +18,20 @@ class Arbitrator:
 
     def choose(self, proposals: list[Proposal]) -> Decision:
         if not proposals:
-            return Decision("WAIT", "workspace", 0.0, "No arm proposed an action", [])
+            return Decision(
+                ActionCode.WAIT, UnitCode.WORKSPACE, 0.0,
+                ReasonCode.NONE, 0.0, False, [],
+            )
 
         vetoes = [p for p in proposals if p.risk >= 0.9 and p.urgency >= 0.75]
         candidates = vetoes or proposals
         winner = max(candidates, key=self.score)
-        prefix = "Safety veto" if vetoes else "Highest arbitration score"
         return Decision(
             action=winner.action,
             winner=winner.arm,
             score=round(self.score(winner), 4),
-            reason=f"{prefix}: {winner.reason}",
+            reason_code=winner.reason_code,
+            reason_value=winner.reason_value,
+            safety_veto=bool(vetoes),
             proposals=proposals,
         )
-

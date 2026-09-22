@@ -6,7 +6,8 @@ from octocortex.arms.memory import MemoryArm
 from octocortex.arms.navigation import MOVES, NavigationArm
 from octocortex.arms.vision import VisionArm
 from octocortex.core.event_bus import SparseEventBus
-from octocortex.core.models import Event
+from octocortex.core.models import ActionCode
+from octocortex.core.octoir import ConceptCode, SemanticPacket, UnitCode
 from octocortex.core.workspace import GlobalWorkspace
 
 
@@ -71,19 +72,40 @@ class OctoSimulation:
                 collision = True
                 self.collisions += 1
                 self.memory.remember_collision(target)
-                self.bus.observe(Event("body", "collision", 1.0, {"cell": list(target)}, self.tick))
+                self.bus.observe(SemanticPacket(
+                    source=UnitCode.EXECUTION,
+                    target=UnitCode.WORKSPACE,
+                    concept=ConceptCode.COLLISION,
+                    tick=self.tick,
+                    confidence=1.0,
+                    salience=1.0,
+                    urgency=1.0,
+                    risk=1.0,
+                    ttl_ms=500,
+                    state_delta=(float(target[0]), float(target[1])),
+                ))
             else:
                 self.agent = target
 
         if self.agent == self.goal:
             self.done = True
-            self.bus.observe(Event("body", "goal_reached", 1.0, {}, self.tick))
+            self.bus.observe(SemanticPacket(
+                source=UnitCode.EXECUTION,
+                target=UnitCode.WORKSPACE,
+                concept=ConceptCode.GOAL_REACHED,
+                tick=self.tick,
+                confidence=1.0,
+                salience=1.0,
+                expected_reward=1.0,
+                ttl_ms=1_000,
+                state_delta=(float(self.goal[0]), float(self.goal[1])),
+            ))
 
         snapshot = self.snapshot()
         snapshot["transition"] = {
             "collision": collision,
             "snn": snn_state,
-            "salient_events": [event.to_dict() for event in salient],
+            "salient_events": [packet.to_trace() for packet in salient],
         }
         return snapshot
 
@@ -98,7 +120,7 @@ class OctoSimulation:
             "done": self.done,
             "collisions": self.collisions,
             "decision": self.last_decision.to_dict() if self.last_decision else None,
-            "attention": [event.to_dict() for event in self.workspace.attention],
+            "attention": [packet.to_trace() for packet in self.workspace.attention],
             "metrics": {
                 "observations": self.bus.observations,
                 "published_events": self.bus.published,
