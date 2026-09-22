@@ -12,6 +12,7 @@ const reasonText=(code,value=0)=>code===REASON.GOAL_PROGRESS?`move reduces goal 
 const packetTrace=p=>({source:UNIT_NAME[p.source],kind:CONCEPT_NAME[p.concept],salience:p.salience,payload:{concept_id:p.concept,confidence:p.confidence,uncertainty:p.uncertainty,urgency:p.urgency,risk:p.risk,state_delta:p.state_delta,latent:p.latent},tick:p.tick});
 const proposalTrace=p=>({...p,arm:UNIT_NAME[p.arm],action:ACTION_NAME[p.action],reason:reasonText(p.reason_code,p.reason_value)});
 const decisionTrace=d=>({action:ACTION_NAME[d.action],winner:UNIT_NAME[d.winner],score:d.score,reason:`${d.safety_veto?'Safety veto':'Highest arbitration score'}: ${reasonText(d.reason_code,d.reason_value)}`,reason_code:d.reason_code,proposals:d.proposals.map(proposalTrace)});
+const shortLatent=latent=>latent.map(value=>Number(value).toFixed(3));
 
 class LIFNeuron {
   constructor(threshold=1, leak=.6){this.threshold=threshold;this.leak=leak;this.potential=0;this.spikes=0}
@@ -98,16 +99,26 @@ class OctoSimulation {
   step(){
     if(this.done)return this.snapshot();this.tick++;
     const nav=this.navigation(), visual=this.vision(), memory=this.recall(nav.cells);
-    [...nav.events,...visual.events,...memory.events].forEach(event=>this.bus.observe(event));
+    const rawEvents=[...nav.events,...visual.events,...memory.events];
+    const observed=rawEvents.map(event=>({...packetTrace(event),published:this.bus.observe(event)}));
     const salient=this.bus.drain();this.attention=[...salient].sort((a,b)=>b.salience-a.salience).slice(0,5);
     const proposals=[...nav.proposals,...visual.proposals,...memory.proposals];this.globalEnergy+=.1+.16*salient.length+.04*proposals.length;
-    this.lastDecision=this.arbitrate(proposals);let collision=false;
+    this.lastDecision=this.arbitrate(proposals);let collision=false,executionEvent=null;
     if(MOVES[this.lastDecision.action]){
       const [dx,dy]=MOVES[this.lastDecision.action], target=[this.agent[0]+dx,this.agent[1]+dy];
-      if(target[0]<0||target[0]>=12||target[1]<0||target[1]>=8||this.obstacleSet.has(key(target))){collision=true;this.collisions++;this.memory.set(key(target),(this.memory.get(key(target))||0)+1);const learned=this.adapter.encodeSemantic(UNIT.EXECUTION,CONCEPT.COLLISION,[target[0]/11,target[1]/7,1,1]);this.bus.observe(this.packet(UNIT.EXECUTION,CONCEPT.COLLISION,1,{risk:1,urgency:1,ttl_ms:500,state_delta:target,latent:learned.latent}))}else this.agent=target;
+      if(target[0]<0||target[0]>=12||target[1]<0||target[1]>=8||this.obstacleSet.has(key(target))){collision=true;this.collisions++;this.memory.set(key(target),(this.memory.get(key(target))||0)+1);const learned=this.adapter.encodeSemantic(UNIT.EXECUTION,CONCEPT.COLLISION,[target[0]/11,target[1]/7,1,1]);executionEvent=this.packet(UNIT.EXECUTION,CONCEPT.COLLISION,1,{risk:1,urgency:1,ttl_ms:500,state_delta:target,latent:learned.latent})}else this.agent=target;
     }
-    if(key(this.agent)===key(this.goal)){this.done=true;const learned=this.adapter.encodeSemantic(UNIT.EXECUTION,CONCEPT.GOAL_REACHED,[this.goal[0]/11,this.goal[1]/7,1]);this.bus.observe(this.packet(UNIT.EXECUTION,CONCEPT.GOAL_REACHED,1,{expected_reward:1,ttl_ms:1000,state_delta:this.goal,latent:learned.latent}))}
-    return {...this.snapshot(),transition:{collision,snn:visual.snn,salient_events:salient.map(packetTrace)}};
+    if(key(this.agent)===key(this.goal)){this.done=true;const learned=this.adapter.encodeSemantic(UNIT.EXECUTION,CONCEPT.GOAL_REACHED,[this.goal[0]/11,this.goal[1]/7,1]);executionEvent=this.packet(UNIT.EXECUTION,CONCEPT.GOAL_REACHED,1,{expected_reward:1,ttl_ms:1000,state_delta:this.goal,latent:learned.latent})}
+    if(executionEvent)observed.push({...packetTrace(executionEvent),published:this.bus.observe(executionEvent)});
+    const activity=(unit,label,events,unitProposals,detail)=>({unit:UNIT_NAME[unit],label,status:this.lastDecision.winner===unit?'winner':unitProposals.length?'proposing':'active',detail,events:events.map(event=>observed.find(item=>item.source===UNIT_NAME[unit]&&item.kind===CONCEPT_NAME[event.concept])),proposals:unitProposals.map(proposalTrace)});
+    const executionEvents=executionEvent?[executionEvent]:[];
+    const unitActivity=[
+      activity(UNIT.PLANNING,'Planning',nav.events,nav.proposals,`${Object.values(nav.cells).length} candidate cells evaluated`),
+      activity(UNIT.PERCEPTION,'Perception',visual.events,visual.proposals,`danger ${visual.snn.danger.toFixed(2)} · membrane ${visual.snn.potential.toFixed(2)} · spike ${visual.snn.spike?'yes':'no'}`),
+      activity(UNIT.MEMORY,'Memory',memory.events,memory.proposals,`${this.memory.size} collision cells stored`),
+      activity(UNIT.EXECUTION,'Execution',executionEvents,[],collision?'movement blocked':this.done?'goal confirmed':`position committed to ${this.agent.join(':')}`),
+    ];
+    return {...this.snapshot(),transition:{collision,snn:visual.snn,all_events:observed,salient_events:salient.map(packetTrace),unit_activity:unitActivity,pipeline:{observed:observed.length,published:observed.filter(event=>event.published).length,filtered:observed.filter(event=>!event.published).length,proposals:proposals.length,adapter_updates:this.adapter.steps}}};
   }
   snapshot(){return {size:[12,8],agent:[...this.agent],goal:[...this.goal],obstacles:this.obstacles.map(cell=>[...cell]),tick:this.tick,done:this.done,collisions:this.collisions,decision:this.lastDecision?decisionTrace(this.lastDecision):null,attention:this.attention.map(packetTrace),metrics:{observations:this.bus.observations,published_events:this.bus.published,event_sparsity:+this.bus.sparsity.toFixed(3),snn_spikes:this.neuron.spikes,local_energy:+this.localEnergy.toFixed(3),global_energy:+this.globalEnergy.toFixed(3),adapter_loss:+this.adapter.lastLoss.toFixed(6),adapter_mean_loss:+this.adapter.meanLoss.toFixed(6),adapter_steps:this.adapter.steps}}}
 }
@@ -122,7 +133,8 @@ function render(s){
   const m=s.metrics;$('#metrics').innerHTML=[['Tick',s.tick],['Spikes',m.snn_spikes],['Published',m.published_events],['Adapter loss',m.adapter_loss],['Local energy',m.local_energy],['Global energy',m.global_energy]].map(([k,v])=>`<div class="metric"><b>${v}</b><span>${k}</span></div>`).join('');
   $('#status').textContent=s.done?'GOAL REACHED':`POS ${s.agent.join(':')}`;$('#sparsity').textContent=`${Math.round(m.event_sparsity*100)}% FILTERED`;
   if(s.decision){$('#winner').textContent=s.decision.winner;$('#decision').className='decision';$('#decision').innerHTML=`<strong>${s.decision.action}</strong><small>${s.decision.reason} · score ${s.decision.score}</small>`;$('#proposals').innerHTML=s.decision.proposals.map(p=>`<div class="proposal"><span class="arm">${p.arm}</span><div>${p.reason}<div class="bar"><i style="width:${Math.round(p.confidence*100)}%"></i></div></div><b>${p.action}</b></div>`).join('')}else{$('#winner').textContent='IDLE';$('#decision').className='decision empty';$('#decision').textContent='Waiting for proposals.';$('#proposals').innerHTML=''}
-  const ev=s.transition?.salient_events||s.attention||[];$('#events').innerHTML=ev.length?ev.map(e=>`<div class="event"><b>${e.source}/${e.kind}</b><span>${e.salience.toFixed(2)}</span><small>${JSON.stringify(e.payload)}</small></div>`).join(''):'<div class="empty">No salient events this tick.</div>';if(s.done&&timer)toggleRun();
+  const activity=s.transition?.unit_activity||[];$('#activities').innerHTML=activity.length?activity.map(a=>{const event=a.events[0],proposal=a.proposals[0];return `<article class="activity ${a.status}"><header><b>${a.label}</b><span>${a.status}</span></header><p>${a.detail}</p><dl><div><dt>event</dt><dd>${event?event.kind:'none'}</dd></div><div><dt>route</dt><dd>${event?(event.published?'published':'filtered'):'none'}</dd></div><div><dt>proposal</dt><dd>${proposal?proposal.action:'none'}</dd></div><div><dt>latent</dt><dd>${event?shortLatent(event.payload.latent).join(' · '):'—'}</dd></div></dl></article>`}).join(''):'<div class="empty">Step the simulation to inspect local work.</div>';
+  const ev=s.transition?.all_events||s.attention||[];$('#events').innerHTML=ev.length?ev.map(e=>`<div class="event ${e.published===false?'filtered':'published'}"><b>${e.source}/${e.kind}</b><span>${e.published===false?'FILTERED':'PUBLISHED'} · ${e.salience.toFixed(2)}</span><small>latent [${shortLatent(e.payload.latent).join(', ')}] · Δ [${e.payload.state_delta.join(', ')}] · risk ${e.payload.risk.toFixed(2)} · urgency ${e.payload.urgency.toFixed(2)}</small></div>`).join(''):'<div class="empty">No observations this tick.</div>';if(s.done&&timer)toggleRun();
 }
 function step(){render(simulation.step())}function reset(){render(simulation.reset())}
 function toggleRun(){if(timer){clearInterval(timer);timer=null;$('#run').textContent='Run';$('#run').classList.remove('active')}else{timer=setInterval(step,450);$('#run').textContent='Pause';$('#run').classList.add('active')}}

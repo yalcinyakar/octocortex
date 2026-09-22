@@ -19,6 +19,11 @@ assert.ok(losses.slice(-20).reduce((a,b)=>a+b)/20 < losses.slice(0,20).reduce((a
 assert.ok(encoded.latent.filter(value => value !== 0).length <= 2);
 
 const simulation = new OctoSimulation();
+const firstStep = simulation.step();
+assert.equal(firstStep.transition.unit_activity.length, 4);
+assert.equal(firstStep.transition.all_events.length, 3);
+assert.equal(firstStep.transition.pipeline.observed, 3);
+assert.ok(firstStep.transition.all_events.some(event => event.published === false));
 let state;
 for(let tick=0;tick<80;tick++){
   state = simulation.step();
