@@ -7,6 +7,12 @@ const UNIT_NAME=['system','perception','memory','prediction','planning','safety'
 const CONCEPT_NAME=['','visual_scan','danger_spike','route_proposal','trapped','memory_quiet','collision_recall','collision','goal_reached'];
 const ACTION_NAME=['WAIT','UP','DOWN','LEFT','RIGHT'];
 const MOVES={[ACTION.UP]:[0,-1],[ACTION.DOWN]:[0,1],[ACTION.LEFT]:[-1,0],[ACTION.RIGHT]:[1,0]};
+const BENCHMARK_RESULTS=[
+  ['clean','centralized',1,18,0,11.160],['clean','distributed',1,18,0,12.600],['clean','octocortex',1,18,0,5.176],
+  ['sensor noise','centralized',1,22.38,.06,13.876],['sensor noise','distributed',1,22.38,.06,15.666],['sensor noise','octocortex',.99,23.33,.01,8.945],
+  ['component failure','centralized',.52,18,0,29.611],['component failure','distributed',1,18,0,10.595],['component failure','octocortex',.84,18,0,6.400],
+  ['combined','centralized',.52,22.54,.05,31.074],['combined','distributed',1,22.38,.06,13.199],['combined','octocortex',.83,22.96,.01,9.891],
+];
 const key = cell => cell.join(',');
 const reasonText=(code,value=0)=>code===REASON.GOAL_PROGRESS?`move reduces goal distance to ${value}`:code===REASON.DANGER_SPIKE?'local danger neuron spiked':code===REASON.COLLISION_MEMORY?`recalled ${value} collision(s)`:code===REASON.NO_VALID_MOVE?'no valid move':'no semantic reason code';
 const packetTrace=p=>({source:UNIT_NAME[p.source],kind:CONCEPT_NAME[p.concept],salience:p.salience,payload:{concept_id:p.concept,semantic_code:p.semantic_code,quantization_error:p.quantization_error,confidence:p.confidence,uncertainty:p.uncertainty,urgency:p.urgency,risk:p.risk,state_delta:p.state_delta,latent:p.latent},tick:p.tick});
@@ -155,5 +161,6 @@ function render(s){
 }
 function step(){render(simulation.step())}function reset(){render(simulation.reset())}
 function toggleRun(){if(timer){clearInterval(timer);timer=null;$('#run').textContent='Run';$('#run').classList.remove('active')}else{timer=setInterval(step,450);$('#run').textContent='Pause';$('#run').classList.add('active')}}
-if(typeof module!=='undefined')module.exports={UNIT,CONCEPT,ACTION,REASON,LIFNeuron,SparseEventBus,OnlineVectorQuantizer,SemanticAdapter,OctoSimulation};
-if(typeof document!=='undefined'){$('#step').onclick=step;$('#run').onclick=toggleRun;$('#reset').onclick=reset;render(simulation.snapshot())}
+function renderBenchmark(){const target=$('#benchmark');if(!target)return;target.innerHTML=`<table><thead><tr><th>Scenario</th><th>Architecture</th><th>Success</th><th>Steps*</th><th>Collisions</th><th>Energy</th></tr></thead><tbody>${BENCHMARK_RESULTS.map(([scenario,architecture,success,steps,collisions,energy])=>`<tr class="${architecture==='octocortex'?'ours':''}"><td>${scenario}</td><td>${architecture}</td><td>${Math.round(success*100)}%</td><td>${steps}</td><td>${collisions}</td><td>${energy.toFixed(3)}</td></tr>`).join('')}</tbody></table><small>* Steps are averaged over successful episodes. Component outage probability: 35%; sensor noise: 15%.</small>`}
+if(typeof module!=='undefined')module.exports={UNIT,CONCEPT,ACTION,REASON,BENCHMARK_RESULTS,LIFNeuron,SparseEventBus,OnlineVectorQuantizer,SemanticAdapter,OctoSimulation};
+if(typeof document!=='undefined'){$('#step').onclick=step;$('#run').onclick=toggleRun;$('#reset').onclick=reset;render(simulation.snapshot());renderBenchmark()}

@@ -1,5 +1,6 @@
 import unittest
 
+from benchmarks.architecture_comparison import run_benchmark
 from octocortex.core.arbitrator import Arbitrator
 from octocortex.core.event_bus import SparseEventBus
 from octocortex.core.models import ActionCode, Proposal, ReasonCode
@@ -94,6 +95,19 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(state["metrics"]["local_energy"], 0.0)
         self.assertEqual(state["metrics"]["adapter_steps"], 0)
         self.assertEqual(state["metrics"]["semantic_codes_used"], 0)
+
+    def test_noise_replay_is_deterministic(self):
+        first = OctoSimulation(seed=31, sensor_noise=0.2)
+        second = OctoSimulation(seed=31, sensor_noise=0.2)
+        first_path = [first.step()["agent"] for _ in range(12)]
+        second_path = [second.step()["agent"] for _ in range(12)]
+        self.assertEqual(first_path, second_path)
+
+    def test_architecture_benchmark_covers_all_cases(self):
+        report = run_benchmark(trials=3, max_steps=80)
+        self.assertEqual(len(report["summary"]), 12)
+        clean = [row for row in report["summary"] if row["scenario"] == "clean"]
+        self.assertTrue(all(row["success_rate"] == 1.0 for row in clean))
 
 
 if __name__ == "__main__":

@@ -13,14 +13,24 @@ from octocortex.learning.adapter import SparseSemanticAdapter
 
 
 class OctoSimulation:
-    def __init__(self, seed: int = 7) -> None:
+    def __init__(
+        self,
+        seed: int = 7,
+        sensor_noise: float = 0.0,
+        disabled_units: frozenset[UnitCode] = frozenset(),
+    ) -> None:
+        if not 0.0 <= sensor_noise <= 1.0:
+            raise ValueError("sensor_noise must be between 0 and 1")
         self.seed = seed
+        self.sensor_noise = sensor_noise
+        self.disabled_units = frozenset(disabled_units)
         self.random = random.Random(seed)
         self.reset()
 
     def reset(self) -> dict:
         # Reset the cognitive state as well as the body/world state so repeated
         # experiments remain comparable from the browser.
+        self.random.seed(self.seed)
         self.bus = SparseEventBus(threshold=0.5)
         self.workspace = GlobalWorkspace()
         self.adapter = SparseSemanticAdapter()
@@ -47,15 +57,40 @@ class OctoSimulation:
             "obstacles": [list(cell) for cell in sorted(self.obstacles)],
         }
 
+    def _perceived_state(self) -> dict:
+        state = self._state()
+        if not self.sensor_noise:
+            return state
+        perceived = {tuple(cell) for cell in state["obstacles"]}
+        x, y = self.agent
+        width, height = state["size"]
+        for dx, dy in MOVES.values():
+            cell = (x + dx, y + dy)
+            if 0 <= cell[0] < width and 0 <= cell[1] < height and self.random.random() < self.sensor_noise:
+                perceived.symmetric_difference_update({cell})
+        return {**state, "obstacles": [list(cell) for cell in sorted(perceived)]}
+
     def step(self) -> dict:
         if self.done:
             return self.snapshot()
         self.tick += 1
         state = self._state()
+        perceived_state = self._perceived_state()
 
-        nav_events, nav_proposals, next_cells = self.navigation.propose(state, self.tick)
-        visual_events, visual_proposals, snn_state = self.vision.inspect(state, self.tick)
-        memory_events, memory_proposals = self.memory.recall(next_cells, self.tick)
+        if UnitCode.PLANNING in self.disabled_units:
+            nav_events, nav_proposals = [], []
+            next_cells = self.navigation.next_cells(self.agent)
+        else:
+            nav_events, nav_proposals, next_cells = self.navigation.propose(perceived_state, self.tick)
+        if UnitCode.PERCEPTION in self.disabled_units:
+            visual_events, visual_proposals = [], []
+            snn_state = {"danger": 0.0, "spike": False, "potential": self.vision.network.neuron.potential}
+        else:
+            visual_events, visual_proposals, snn_state = self.vision.inspect(perceived_state, self.tick)
+        if UnitCode.MEMORY in self.disabled_units:
+            memory_events, memory_proposals = [], []
+        else:
+            memory_events, memory_proposals = self.memory.recall(next_cells, self.tick)
         all_events = nav_events + visual_events + memory_events
         for event in all_events:
             self.bus.observe(event)
@@ -149,5 +184,7 @@ class OctoSimulation:
                 "adapter_steps": self.adapter.steps,
                 "semantic_codes_used": self.adapter.quantizer.codes_used,
                 "quantization_error": round(self.adapter.quantizer.last_error, 6),
+                "sensor_noise": self.sensor_noise,
+                "disabled_units": len(self.disabled_units),
             },
         }

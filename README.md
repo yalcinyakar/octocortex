@@ -46,6 +46,17 @@ Compare the compact OctoIR wire packet with its human-readable trace:
 python -m benchmarks.octoir_size
 ```
 
+Compare centralized, fully distributed, and OctoCortex control over 100
+deterministic seeds and four fault scenarios:
+
+```bash
+python -m benchmarks.architecture_comparison --trials 100
+```
+
+The energy number is a logical operation-cost proxy, not joules. Runtime is
+implementation-specific Python wall time and must not be presented as a
+hardware performance result.
+
 ## Project shape
 
 ```text
@@ -72,4 +83,7 @@ The architecture is intentionally measurable. The API reports:
 - semantic adapter reconstruction loss and training steps.
 - vector-quantization error and shared semantic-code utilization.
 
-This is an architecture simulator, not yet a biological fidelity claim. The next useful milestone is a benchmark harness comparing this hybrid against a centralized policy and a fully distributed policy under sensor noise and arm failure.
+This is an architecture simulator, not yet a biological fidelity claim. The
+current benchmark shows lower logical energy for OctoCortex, but also exposes a
+planning-arm dependency: success falls under injected component failure. The
+next milestone is redundant planning and dynamic arm reassignment.
