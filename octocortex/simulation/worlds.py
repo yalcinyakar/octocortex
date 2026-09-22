@@ -84,3 +84,31 @@ def generate_world(seed: int, size: tuple[int, int] = (12, 8), density: float = 
 
 TRAIN_WORLDS = tuple(generate_world(1_000 + seed) for seed in range(32))
 TEST_WORLDS = tuple(generate_world(10_000 + seed) for seed in range(100))
+
+
+def generate_detour_world(seed: int, size: tuple[int, int] = (12, 8), density: float = 0.10) -> WorldSpec:
+    """Create a world whose shortest route must initially move away from the goal."""
+    rng = random.Random(seed)
+    width, height = size
+    top_start = seed % 2 == 0
+    start = (0, 0 if top_start else height - 1)
+    goal = (width - 1, start[1])
+    gap_y = height - 1 if top_start else 0
+    wall_x = 4 + seed % max(1, width - 8)
+    barrier = {(wall_x, y) for y in range(height) if y != gap_y}
+    guaranteed_route = (
+        {(0, y) for y in range(min(start[1], gap_y), max(start[1], gap_y) + 1)}
+        | {(x, gap_y) for x in range(width)}
+        | {(width - 1, y) for y in range(min(goal[1], gap_y), max(goal[1], gap_y) + 1)}
+    )
+    obstacles = set(barrier)
+    for y in range(height):
+        for x in range(width):
+            cell = (x, y)
+            if cell not in guaranteed_route and cell not in obstacles and rng.random() < density:
+                obstacles.add(cell)
+    return WorldSpec(size, start, goal, frozenset(obstacles), seed)
+
+
+HARD_TRAIN_WORLDS = tuple(generate_detour_world(20_000 + seed) for seed in range(32))
+HARD_TEST_WORLDS = tuple(generate_detour_world(30_000 + seed) for seed in range(100))

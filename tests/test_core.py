@@ -2,6 +2,7 @@ import unittest
 
 from benchmarks.architecture_comparison import run_benchmark
 from benchmarks.generalization import run_generalization
+from benchmarks.partial_observability import run_benchmark as run_partial_benchmark
 from octocortex.core.arbitrator import Arbitrator
 from octocortex.core.capabilities import CapabilityCode, CapabilityRouter
 from octocortex.core.event_bus import SparseEventBus
@@ -12,6 +13,7 @@ from octocortex.learning.adapter import SparseSemanticAdapter
 from octocortex.learning.quantizer import OnlineVectorQuantizer
 from octocortex.snn.network import LIFNeuron
 from octocortex.simulation.worlds import TEST_WORLDS, TRAIN_WORLDS
+from octocortex.simulation.worlds import HARD_TEST_WORLDS, HARD_TRAIN_WORLDS
 
 
 class CoreTests(unittest.TestCase):
@@ -144,6 +146,28 @@ class CoreTests(unittest.TestCase):
         unseen = [row for row in report["results"] if row["split"] == "unseen"]
         self.assertEqual(report["split_overlap"], 0)
         self.assertTrue(all(row["success_rate"] >= 0.75 for row in unseen))
+
+    def test_partial_observation_does_not_expose_full_map(self):
+        world = HARD_TEST_WORLDS[0]
+        simulation = OctoSimulation(world=world, partial_observability=True)
+        state = simulation.step()
+        self.assertLess(state["metrics"]["world_model_cells"], world.size[0] * world.size[1])
+        self.assertGreater(state["metrics"]["world_model_cells"], 0)
+
+    def test_hard_world_train_test_fingerprints_do_not_overlap(self):
+        self.assertFalse(
+            {world.fingerprint for world in HARD_TRAIN_WORLDS}
+            & {world.fingerprint for world in HARD_TEST_WORLDS}
+        )
+
+    def test_world_model_benchmark_covers_ablation(self):
+        report = run_partial_benchmark(worlds=8, max_steps=120)
+        self.assertEqual([row["condition"] for row in report["results"]], [
+            "local_only", "octocortex_world_model",
+        ])
+        local_only, world_model = report["results"]
+        self.assertLess(local_only["success_rate"], 0.5)
+        self.assertGreaterEqual(world_model["success_rate"], 0.9)
 
 
 if __name__ == "__main__":

@@ -60,3 +60,25 @@ local policy, not maze solving, long-horizon credit assignment, or general
 intelligence. Safety spikes remain observable but issue a hard WAIT veto only
 when all four neighboring cells are occupied; proximity alone cannot deadlock
 the agent.
+
+## Partial observability and recurrent world model
+
+`benchmarks.partial_observability` removes full-map access. At each step the
+agent receives only a 3×3 window centered on its current position. The
+Prediction unit accumulates those local observations into a recurrent occupancy
+belief, reports coverage and uncertainty in OctoIR, and gives the route planner
+only the current belief map.
+
+The 100 held-out hard worlds contain a wall whose gap is on the side opposite
+the goal, so the route must temporarily increase goal distance. With the same
+planner but without accumulated prediction state, the agent forgets the wall
+between observations and oscillates.
+
+| Condition | Worlds | Success | Steps | Collisions | Mean map coverage |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| local observation only | 100 | 0% | — | 0.000 | 0% |
+| OctoCortex world model | 100 | 100% | 27.40 | 0.000 | 63.6% |
+
+This isolates the value of persistent spatial belief on a controlled static
+task. It does not yet cover moving obstacles, observation drift, learned
+dynamics, or calibrated out-of-distribution detection.

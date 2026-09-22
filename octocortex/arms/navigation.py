@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import heapq
+
 from octocortex.core.models import ActionCode, Proposal, ReasonCode
 from octocortex.core.octoir import ConceptCode, SemanticPacket, UnitCode
 from octocortex.learning.adapter import SparseSemanticAdapter
@@ -23,6 +25,41 @@ class NavigationArm:
     def next_cells(self, agent: tuple[int, int]) -> dict[ActionCode, tuple[int, int]]:
         x, y = agent
         return {action: (x + dx, y + dy) for action, (dx, dy) in MOVES.items()}
+
+    def route_action(
+        self,
+        agent: tuple[int, int],
+        goal: tuple[int, int],
+        obstacles: set[tuple[int, int]],
+        size: tuple[int, int],
+    ) -> ActionCode:
+        """Return the first action on an A* route through the current belief map."""
+        if agent == goal:
+            return ActionCode.WAIT
+        width, height = size
+        frontier = [(0, 0, agent)]
+        parents: dict[tuple[int, int], tuple[tuple[int, int], ActionCode]] = {}
+        costs = {agent: 0}
+        order = 0
+        while frontier:
+            _, _, cell = heapq.heappop(frontier)
+            if cell == goal:
+                while parents[cell][0] != agent:
+                    cell = parents[cell][0]
+                return parents[cell][1]
+            for action, (dx, dy) in MOVES.items():
+                neighbor = (cell[0] + dx, cell[1] + dy)
+                if not (0 <= neighbor[0] < width and 0 <= neighbor[1] < height) or neighbor in obstacles:
+                    continue
+                cost = costs[cell] + 1
+                if cost >= costs.get(neighbor, 1_000_000):
+                    continue
+                costs[neighbor] = cost
+                parents[neighbor] = (cell, action)
+                order += 1
+                heuristic = abs(neighbor[0] - goal[0]) + abs(neighbor[1] - goal[1])
+                heapq.heappush(frontier, (cost + heuristic, order, neighbor))
+        return ActionCode.WAIT
 
     def propose(self, state: dict, tick: int) -> tuple[list[SemanticPacket], list[Proposal], dict[ActionCode, tuple[int, int]]]:
         agent = tuple(state["agent"])
@@ -51,9 +88,16 @@ class NavigationArm:
             )], cells
 
         current_distance = abs(agent[0] - goal[0]) + abs(agent[1] - goal[1])
-        action, cell = min(valid.items(), key=lambda item: (
-            abs(item[1][0] - goal[0]) + abs(item[1][1] - goal[1]), item[0].name
-        ))
+        if "observed_cells" in state:
+            action = self.route_action(agent, goal, obstacles, (width, height))
+            if action not in valid:
+                action = min(valid, key=lambda candidate: int(candidate))
+        else:
+            action = min(valid, key=lambda candidate: (
+                abs(valid[candidate][0] - goal[0]) + abs(valid[candidate][1] - goal[1]),
+                candidate.name,
+            ))
+        cell = valid[action]
         new_distance = abs(cell[0] - goal[0]) + abs(cell[1] - goal[1])
         progress = current_distance - new_distance
         proposal = Proposal(
@@ -70,8 +114,9 @@ class NavigationArm:
         learned = self.adapter.encode_semantic(
             self.unit, ConceptCode.ROUTE_PROPOSAL,
             (
-                float(action) / 4.0, cell[0] / 11.0, cell[1] / 7.0,
-                new_distance / 18.0, proposal.confidence,
+                float(action) / 4.0,
+                cell[0] / max(1, width - 1), cell[1] / max(1, height - 1),
+                new_distance / max(1, width + height - 2), proposal.confidence,
                 proposal.expected_reward,
             ),
         )

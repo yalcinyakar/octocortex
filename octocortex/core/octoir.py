@@ -25,6 +25,7 @@ class ConceptCode(IntEnum):
     COLLISION_RECALL = 6
     COLLISION = 7
     GOAL_REACHED = 8
+    WORLD_MODEL_UPDATE = 9
 
 
 _HEADER_V1 = struct.Struct("<4sBBBHBIIffffffHH")

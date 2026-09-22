@@ -60,6 +60,13 @@ disjoint, previously unseen worlds:
 python -m benchmarks.generalization --train-worlds 32 --test-worlds 100
 ```
 
+Test the recurrent occupancy world model with only a 3×3 sensor window on 100
+held-out worlds that require a detour:
+
+```bash
+python -m benchmarks.partial_observability --worlds 100
+```
+
 The energy number is a logical operation-cost proxy, not joules. Runtime is
 implementation-specific Python wall time and must not be presented as a
 hardware performance result.
@@ -100,4 +107,7 @@ map. On the held-out 100-world suite, both independent backup owners reach 98%
 success with 99% action agreement. The generator guarantees a descending
 route, so this establishes transfer but not hard-maze reasoning. The next
 milestone is partial observability and worlds that require temporary movement
-away from the goal. See [the technical roadmap](docs/roadmap.md).
+away from the goal. That partial-observability stage now reaches 100% across
+100 held-out detour worlds, while the local-only memory ablation reaches 0%.
+This is a constrained static-world result, not a general navigation claim. See
+[the technical roadmap](docs/roadmap.md).

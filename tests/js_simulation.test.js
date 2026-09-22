@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const {UNIT, CONCEPT, CAPABILITY, BENCHMARK_RESULTS, LIFNeuron, SparseEventBus, CapabilityRouter, OnlineVectorQuantizer, SemanticAdapter, OctoSimulation} = require('../octocortex/static/app.js');
+const {UNIT, CONCEPT, CAPABILITY, BENCHMARK_RESULTS, WORLD_MODEL_RESULTS, LIFNeuron, SparseEventBus, CapabilityRouter, OnlineVectorQuantizer, SemanticAdapter, OctoSimulation} = require('../octocortex/static/app.js');
 
 const neuron = new LIFNeuron(1, 1);
 assert.equal(neuron.step(.4), false);
@@ -45,6 +45,7 @@ assert.deepEqual(state.agent, state.goal);
 assert.ok(state.metrics.observations > state.metrics.published_events);
 assert.ok(state.metrics.adapter_steps > 0);
 assert.equal(BENCHMARK_RESULTS.length, 12);
+assert.equal(WORLD_MODEL_RESULTS[1][2], 1);
 
 const failedSimulation = new OctoSimulation();
 failedSimulation.disabledUnits.add(UNIT.PLANNING);

@@ -4,6 +4,7 @@ import random
 
 from octocortex.arms.memory import MemoryArm
 from octocortex.arms.navigation import MOVES, NavigationArm
+from octocortex.arms.prediction import PredictionArm
 from octocortex.arms.vision import VisionArm
 from octocortex.core.event_bus import SparseEventBus
 from octocortex.core.capabilities import CapabilityCode, CapabilityRouter
@@ -23,6 +24,9 @@ class OctoSimulation:
         disabled_units: frozenset[UnitCode] = frozenset(),
         world: WorldSpec = DEFAULT_WORLD,
         backup_training_worlds: tuple[WorldSpec, ...] = TRAIN_WORLDS,
+        partial_observability: bool = False,
+        enable_prediction: bool = True,
+        sensor_radius: int = 1,
     ) -> None:
         if not 0.0 <= sensor_noise <= 1.0:
             raise ValueError("sensor_noise must be between 0 and 1")
@@ -31,6 +35,9 @@ class OctoSimulation:
         self.disabled_units = frozenset(disabled_units)
         self.world = world
         self.backup_training_worlds = backup_training_worlds
+        self.partial_observability = partial_observability
+        self.enable_prediction = enable_prediction
+        self.sensor_radius = sensor_radius
         self.random = random.Random(seed)
         self.reset()
 
@@ -45,6 +52,7 @@ class OctoSimulation:
         self.vision = VisionArm(self.adapter)
         self.memory = MemoryArm(self.adapter)
         self.navigation = NavigationArm(self.adapter)
+        self.prediction = PredictionArm(self.adapter)
         self.tick = 0
         self.agent = self.world.start
         self.visited_cells = {self.agent}
@@ -83,12 +91,40 @@ class OctoSimulation:
                 perceived.symmetric_difference_update({cell})
         return {**state, "obstacles": [list(cell) for cell in sorted(perceived)]}
 
+    def _local_observation(self) -> dict:
+        width, height = self.world.size
+        x, y = self.agent
+        visible = []
+        perceived_obstacles = set()
+        for cy in range(max(0, y - self.sensor_radius), min(height, y + self.sensor_radius + 1)):
+            for cx in range(max(0, x - self.sensor_radius), min(width, x + self.sensor_radius + 1)):
+                occupied = (cx, cy) in self.obstacles
+                if self.sensor_noise and self.random.random() < self.sensor_noise:
+                    occupied = not occupied
+                visible.append([cx, cy, occupied])
+                if occupied:
+                    perceived_obstacles.add((cx, cy))
+        return {
+            "size": [width, height],
+            "agent": list(self.agent),
+            "goal": list(self.goal),
+            "obstacles": [list(cell) for cell in sorted(perceived_obstacles)],
+            "visible": visible,
+            "observed_cells": len(visible),
+        }
+
     def step(self) -> dict:
         if self.done:
             return self.snapshot()
         self.tick += 1
         state = self._state()
-        perceived_state = self._perceived_state()
+        sensor_state = self._local_observation() if self.partial_observability else self._perceived_state()
+        prediction_events = []
+        if self.partial_observability and self.enable_prediction and UnitCode.PREDICTION not in self.disabled_units:
+            prediction_events = self.prediction.observe(sensor_state, self.tick)
+            perceived_state = self.prediction.belief_state(self.agent, self.goal)
+        else:
+            perceived_state = sensor_state
 
         available = {UnitCode.PLANNING, UnitCode.MEMORY, UnitCode.PERCEPTION} - set(self.disabled_units)
         planning_lease = self.capabilities.resolve(CapabilityCode.PLAN_ROUTE, available)
@@ -121,12 +157,12 @@ class OctoSimulation:
             visual_events, visual_proposals = [], []
             snn_state = {"danger": 0.0, "spike": False, "potential": self.vision.network.neuron.potential}
         else:
-            visual_events, visual_proposals, snn_state = self.vision.inspect(perceived_state, self.tick)
+            visual_events, visual_proposals, snn_state = self.vision.inspect(sensor_state, self.tick)
         if UnitCode.MEMORY in self.disabled_units:
             memory_events, memory_proposals = [], []
         else:
             memory_events, memory_proposals = self.memory.recall(next_cells, self.tick)
-        all_events = nav_events + visual_events + memory_events
+        all_events = prediction_events + nav_events + visual_events + memory_events
         for event in all_events:
             self.bus.observe(event)
 
@@ -195,6 +231,11 @@ class OctoSimulation:
             "salient_events": [packet.to_trace() for packet in salient],
             "planning_owner": planning_lease.owner.name.lower() if planning_lease else None,
             "planning_delegated": planning_lease.delegated if planning_lease else False,
+            "world_model": {
+                "coverage": round(self.prediction.coverage, 3),
+                "observed_cells": self.prediction.observed_cells,
+                "known_obstacles": len(self.prediction.known_obstacles),
+            },
         }
         return snapshot
 
@@ -202,6 +243,7 @@ class OctoSimulation:
         local_energy = (
             self.vision.energy + self.vision.network.energy
             + self.memory.energy + self.navigation.energy
+            + self.prediction.energy
             + sum(planner.energy for planner in self.backup_planners.values())
         )
         return {
@@ -232,5 +274,8 @@ class OctoSimulation:
                 "backup_accuracy": round(max(
                     planner.training_accuracy for planner in self.backup_planners.values()
                 ), 3),
+                "partial_observability": self.partial_observability,
+                "world_model_coverage": round(self.prediction.coverage, 3),
+                "world_model_cells": self.prediction.observed_cells,
             },
         }

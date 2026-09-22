@@ -30,16 +30,23 @@ Exit evidence: 100% success under the current component-failure scenario.
 Exit evidence: 98% held-out success for both backup owners and 99% action
 agreement. Scope is monotonic-route worlds only.
 
-## Stage 4 — World model under partial observability (next)
+## Stage 4A — Static world model under partial observability (complete)
 
 - Replace full-map input with a local sensor window.
 - Add a recurrent Prediction unit that estimates occupancy and uncertainty.
-- Require detours, cul-de-sacs, moving obstacles, and temporary movement away
-  from the goal.
-- Add confidence calibration and out-of-distribution detection to OctoIR.
+- Require detours and temporary movement away from the goal.
 
-Exit gate: at least 90% success on unseen hard worlds, bounded collision rate,
-and a statistically reported gap over the no-memory ablation.
+Exit evidence: 100% success on 100 unseen static detour worlds versus 0% for
+the local-only memory ablation, with no full-map access.
+
+## Stage 4B — Dynamic uncertainty (next)
+
+- Add moving obstacles, observation drift, and disappearing paths.
+- Learn transition dynamics instead of storing occupancy alone.
+- Calibrate confidence and add out-of-distribution detection to OctoIR.
+
+Exit gate: at least 90% success on unseen dynamic worlds, bounded collision
+rate, calibrated uncertainty, and a statistically reported ablation gap.
 
 ## Stage 5 — Equal-budget baselines
 
