@@ -29,6 +29,10 @@ state delta contains newly observed cells, total observed cells, and known
 obstacles; confidence and uncertainty expose current map coverage without
 transporting the full map through the global workspace.
 
+Packet flag `4` marks elevated world-model volatility. Dynamic model updates
+append expired-cell count and learned change rate to `state_delta`; confidence
+is coverage discounted by volatility rather than raw coverage alone.
+
 The binary wire format starts with `OIR1`, is little-endian, and contains no
 JSON keys, prose, tokenizer output, or human-readable module names.
 

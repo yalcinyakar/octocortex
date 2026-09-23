@@ -11,6 +11,13 @@ class WorldSpec:
     goal: tuple[int, int]
     obstacles: frozenset[tuple[int, int]]
     seed: int | None = None
+    dynamic_paths: tuple[tuple[tuple[int, int] | None, ...], ...] = ()
+
+    def obstacles_at(self, tick: int) -> frozenset[tuple[int, int]]:
+        dynamic = {
+            path[tick % len(path)] for path in self.dynamic_paths if path and path[tick % len(path)] is not None
+        }
+        return self.obstacles | dynamic
 
     def state(self, agent: tuple[int, int] | None = None) -> dict:
         return {
@@ -22,7 +29,7 @@ class WorldSpec:
 
     @property
     def fingerprint(self) -> tuple:
-        return self.size, self.start, self.goal, tuple(sorted(self.obstacles))
+        return self.size, self.start, self.goal, tuple(sorted(self.obstacles)), self.dynamic_paths
 
 
 DEFAULT_WORLD = WorldSpec(
@@ -112,3 +119,23 @@ def generate_detour_world(seed: int, size: tuple[int, int] = (12, 8), density: f
 
 HARD_TRAIN_WORLDS = tuple(generate_detour_world(20_000 + seed) for seed in range(32))
 HARD_TEST_WORLDS = tuple(generate_detour_world(30_000 + seed) for seed in range(100))
+
+
+def generate_dynamic_world(seed: int, size: tuple[int, int] = (12, 8)) -> WorldSpec:
+    """A wall gate disappears after the agent has observed it and moved away."""
+    width, height = size
+    variant = seed - 40_000
+    top_route = (variant // 6) % 2 == 0
+    route_y = 0 if top_route else height - 1
+    gate = (3 + variant % 6, route_y)
+    barrier = frozenset((gate[0], y) for y in range(height) if y != route_y)
+    start = (0, route_y)
+    goal = (width - 1, route_y)
+    # Vary both the spatial layout and change time. The gate then remains open
+    # long enough for a volatility-aware belief to expire stale evidence.
+    closed_ticks = 7 + (variant // 12) % 5
+    gate_cycle = tuple([gate] * closed_ticks + [None] * 30)
+    return WorldSpec(size, start, goal, barrier, seed, (gate_cycle,))
+
+
+DYNAMIC_TEST_WORLDS = tuple(generate_dynamic_world(40_000 + seed) for seed in range(100))

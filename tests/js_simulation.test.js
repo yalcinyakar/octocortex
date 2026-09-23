@@ -30,9 +30,9 @@ assert.ok(quantizer.quantize([0,-.2,-.18,0], false).error < .001);
 
 const simulation = new OctoSimulation();
 const firstStep = simulation.step();
-assert.equal(firstStep.transition.unit_activity.length, 4);
-assert.equal(firstStep.transition.all_events.length, 3);
-assert.equal(firstStep.transition.pipeline.observed, 3);
+assert.equal(firstStep.transition.unit_activity.length, 5);
+assert.equal(firstStep.transition.all_events.length, 4);
+assert.equal(firstStep.transition.pipeline.observed, 4);
 assert.ok(firstStep.transition.all_events.some(event => event.published === false));
 assert.ok(firstStep.transition.all_events.every(event => Number.isInteger(event.payload.semantic_code)));
 let state;

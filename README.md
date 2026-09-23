@@ -67,6 +67,13 @@ held-out worlds that require a detour:
 python -m benchmarks.partial_observability --worlds 100
 ```
 
+Test stale-belief adaptation when a previously observed gate disappears and
+local sensing has a 2% error rate:
+
+```bash
+python -m benchmarks.dynamic_uncertainty --worlds 100
+```
+
 The energy number is a logical operation-cost proxy, not joules. Runtime is
 implementation-specific Python wall time and must not be presented as a
 hardware performance result.
@@ -111,3 +118,8 @@ away from the goal. That partial-observability stage now reaches 100% across
 100 held-out detour worlds, while the local-only memory ablation reaches 0%.
 This is a constrained static-world result, not a general navigation claim. See
 [the technical roadmap](docs/roadmap.md).
+
+The live dashboard now starts with a guided explanation, separates the real
+world from the agent's reconstructed belief map, highlights its 3×3 sensor
+window, and moves raw OctoIR telemetry behind an optional technical-details
+panel.

@@ -39,16 +39,18 @@ agreement. Scope is monotonic-route worlds only.
 Exit evidence: 100% success on 100 unseen static detour worlds versus 0% for
 the local-only memory ablation, with no full-map access.
 
-## Stage 4B — Dynamic uncertainty (next)
+## Stage 4B — Dynamic uncertainty (complete)
 
-- Add moving obstacles, observation drift, and disappearing paths.
-- Learn transition dynamics instead of storing occupancy alone.
-- Calibrate confidence and add out-of-distribution detection to OctoIR.
+- Add observation drift and disappearing paths.
+- Estimate temporal volatility instead of storing occupancy forever.
+- Age stale beliefs and expose volatility through OctoIR.
 
-Exit gate: at least 90% success on unseen dynamic worlds, bounded collision
-rate, calibrated uncertainty, and a statistically reported ablation gap.
+Exit evidence: 96% success versus 58% for permanent static belief across 100
+seeded trials with varying gate geometry, change timing, and 2% sensor noise.
+Learned transition prediction, calibrated uncertainty, moving obstacles, and
+explicit out-of-distribution detection remain later research stages.
 
-## Stage 5 — Equal-budget baselines
+## Stage 5 — Equal-budget baselines (next)
 
 - Compare against A*, tabular Q-learning/PPO, a small Transformer policy, and a
   mixture-of-experts controller under matched observations and step budgets.

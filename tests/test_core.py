@@ -3,6 +3,7 @@ import unittest
 from benchmarks.architecture_comparison import run_benchmark
 from benchmarks.generalization import run_generalization
 from benchmarks.partial_observability import run_benchmark as run_partial_benchmark
+from benchmarks.dynamic_uncertainty import run_benchmark as run_dynamic_benchmark
 from octocortex.core.arbitrator import Arbitrator
 from octocortex.core.capabilities import CapabilityCode, CapabilityRouter
 from octocortex.core.event_bus import SparseEventBus
@@ -168,6 +169,13 @@ class CoreTests(unittest.TestCase):
         local_only, world_model = report["results"]
         self.assertLess(local_only["success_rate"], 0.5)
         self.assertGreaterEqual(world_model["success_rate"], 0.9)
+
+    def test_dynamic_belief_expires_stale_obstacles(self):
+        report = run_dynamic_benchmark(worlds=8, max_steps=100)
+        persistent, adaptive = report["results"]
+        self.assertEqual(persistent["mean_expired_cells"], 0.0)
+        self.assertGreater(adaptive["mean_expired_cells"], 0.0)
+        self.assertGreater(adaptive["success_rate"], persistent["success_rate"])
 
 
 if __name__ == "__main__":

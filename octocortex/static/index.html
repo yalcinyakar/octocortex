@@ -9,35 +9,39 @@
 <body>
   <main>
     <header>
-      <div><span class="eyebrow">NEUROMORPHIC LAB / 001</span><h1>OctoCortex</h1></div>
-      <div class="controls"><button id="step">Step</button><button id="run">Run</button><button id="fault" class="quiet">Fail Planning</button><button id="reset" class="quiet">Reset</button></div>
+      <div><span class="eyebrow">OCTOCORTEX / CANLI DENEY</span><h1>Ajan dünyayı nasıl anlıyor?</h1><p class="subtitle">Tam haritayı görmüyor. Yakın çevresini algılıyor, gördüklerini hatırlıyor ve kendi iç haritasıyla karar veriyor.</p></div>
+      <div class="controls"><button id="step">Bir adım</button><button id="run">Otomatik</button><button id="fault" class="quiet">Planlamayı boz</button><button id="reset" class="quiet">Başa dön</button></div>
     </header>
-    <section class="metrics" id="metrics"></section>
-    <section class="layout">
+    <section class="explain">
+      <div><b>1 · ALGILA</b><span>Yalnızca parlak 3×3 alanı görür.</span></div><i>→</i>
+      <div><b>2 · HATIRLA</b><span>Prediction kolu parçaları birleştirir.</span></div><i>→</i>
+      <div><b>3 · PLANLA</b><span>Bilinen engellere göre rota çıkarır.</span></div><i>→</i>
+      <div><b>4 · KARAR VER</b><span>Global Workspace tek hareket seçer.</span></div>
+    </section>
+    <section class="guided-layout">
       <div class="panel world-panel">
-        <div class="panel-title"><span>Environment</span><span id="status">READY</span></div>
+        <div class="panel-title"><span>Gerçek dünya · biz görüyoruz</span><span id="status">HAZIR</span></div>
         <div id="grid" class="grid"></div>
-        <div class="legend"><span><i class="agent"></i>Agent</span><span><i class="goal"></i>Goal</span><span><i class="wall"></i>Obstacle</span></div>
+        <div class="legend"><span><i class="agent"></i>Ajan</span><span><i class="goal"></i>Hedef</span><span><i class="wall"></i>Engel</span><span><i class="sensor"></i>Sensör alanı</span></div>
       </div>
-      <div class="stack">
-        <div class="panel">
-          <div class="panel-title"><span>Global Workspace</span><span id="winner">IDLE</span></div>
-          <div id="decision" class="decision empty">Waiting for proposals.</div>
-        </div>
-        <div class="panel grow">
-          <div class="panel-title"><span>Arm Proposals</span><span>LOCAL → GLOBAL</span></div>
-          <div id="proposals" class="proposals"></div>
-        </div>
+      <div class="panel world-panel belief-panel">
+        <div class="panel-title"><span>Ajanın zihnindeki harita</span><span id="model-status">%0 BİLİNİYOR</span></div>
+        <div id="belief-grid" class="grid"></div>
+        <div class="legend"><span><i class="known"></i>Bilinen</span><span><i class="unknown"></i>Bilinmeyen</span><span><i class="wall"></i>Hatırlanan engel</span></div>
       </div>
     </section>
-    <section class="panel activity-panel">
-      <div class="panel-title"><span>Processing Units</span><span>EVERY UNIT / EVERY TICK</span></div>
-      <div id="activities" class="activities"><div class="empty">Step the simulation to inspect local work.</div></div>
+    <section class="panel story-panel">
+      <div class="panel-title"><span>Şu anda ne oluyor?</span><span id="winner">BEKLİYOR</span></div>
+      <div id="story" class="story">“Bir adım”a bas. Ajan yalnızca başlangıç çevresini görebiliyor.</div>
+      <div id="decision" class="decision empty">Henüz karar verilmedi.</div>
+      <div id="proposals" class="proposals compact"></div>
     </section>
-    <section class="panel event-panel">
-      <div class="panel-title"><span>Sparse Event Bus — All Observations</span><span id="sparsity">—</span></div>
-      <div id="events" class="events"><div class="empty">No salient events yet.</div></div>
-    </section>
+    <details class="technical">
+      <summary>Teknik detayları aç · kollar, OctoIR mesajları ve enerji</summary>
+      <section class="metrics" id="metrics"></section>
+      <section class="panel activity-panel"><div class="panel-title"><span>İşlem birimleri</span><span>HER TICK</span></div><div id="activities" class="activities"><div class="empty">Simülasyonu başlat.</div></div></section>
+      <section class="panel event-panel"><div class="panel-title"><span>Seyrek olay veri yolu</span><span id="sparsity">—</span></div><div id="events" class="events"><div class="empty">Henüz olay yok.</div></div></section>
+    </details>
     <section class="panel benchmark-panel">
       <div class="panel-title"><span>Architecture Benchmark — 100 seeds</span><span>ENERGY IS A LOGICAL PROXY</span></div>
       <div id="benchmark" class="benchmark"></div>
@@ -50,7 +54,11 @@
       <div class="panel-title"><span>Partial observability — recurrent world model</span><span>NO FULL MAP ACCESS</span></div>
       <div id="world-model" class="benchmark"></div>
     </section>
+    <section class="panel benchmark-panel">
+      <div class="panel-title"><span>Dynamic uncertainty — disappearing gate</span><span>STALE BELIEF ADAPTATION</span></div>
+      <div id="dynamic-model" class="benchmark"></div>
+    </section>
   </main>
-  <script src="/app.js?v=2b6b70f"></script>
+  <script src="/app.js?v=guided-dynamic-1"></script>
 </body>
 </html>

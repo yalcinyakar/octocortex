@@ -27,6 +27,7 @@ class OctoSimulation:
         partial_observability: bool = False,
         enable_prediction: bool = True,
         sensor_radius: int = 1,
+        prediction_stale_after: int | None = None,
     ) -> None:
         if not 0.0 <= sensor_noise <= 1.0:
             raise ValueError("sensor_noise must be between 0 and 1")
@@ -38,6 +39,7 @@ class OctoSimulation:
         self.partial_observability = partial_observability
         self.enable_prediction = enable_prediction
         self.sensor_radius = sensor_radius
+        self.prediction_stale_after = prediction_stale_after
         self.random = random.Random(seed)
         self.reset()
 
@@ -52,12 +54,12 @@ class OctoSimulation:
         self.vision = VisionArm(self.adapter)
         self.memory = MemoryArm(self.adapter)
         self.navigation = NavigationArm(self.adapter)
-        self.prediction = PredictionArm(self.adapter)
+        self.prediction = PredictionArm(self.adapter, stale_after=self.prediction_stale_after)
         self.tick = 0
         self.agent = self.world.start
         self.visited_cells = {self.agent}
         self.goal = self.world.goal
-        self.obstacles = set(self.world.obstacles)
+        self.obstacles = set(self.world.obstacles_at(0))
         self.backup_planners = {
             UnitCode.MEMORY: DistilledBackupPlanner(UnitCode.MEMORY, seed=41),
             UnitCode.PERCEPTION: DistilledBackupPlanner(UnitCode.PERCEPTION, seed=43),
@@ -117,6 +119,7 @@ class OctoSimulation:
         if self.done:
             return self.snapshot()
         self.tick += 1
+        self.obstacles = set(self.world.obstacles_at(self.tick))
         state = self._state()
         sensor_state = self._local_observation() if self.partial_observability else self._perceived_state()
         prediction_events = []
@@ -235,6 +238,8 @@ class OctoSimulation:
                 "coverage": round(self.prediction.coverage, 3),
                 "observed_cells": self.prediction.observed_cells,
                 "known_obstacles": len(self.prediction.known_obstacles),
+                "volatility": round(self.prediction.volatility, 3),
+                "expired_cells": self.prediction.expired_cells,
             },
         }
         return snapshot
@@ -277,5 +282,7 @@ class OctoSimulation:
                 "partial_observability": self.partial_observability,
                 "world_model_coverage": round(self.prediction.coverage, 3),
                 "world_model_cells": self.prediction.observed_cells,
+                "world_model_volatility": round(self.prediction.volatility, 3),
+                "world_model_expired": self.prediction.expired_cells,
             },
         }

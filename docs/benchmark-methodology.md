@@ -82,3 +82,23 @@ between observations and oscillates.
 This isolates the value of persistent spatial belief on a controlled static
 task. It does not yet cover moving obstacles, observation drift, learned
 dynamics, or calibrated out-of-distribution detection.
+
+## Dynamic uncertainty
+
+`benchmarks.dynamic_uncertainty` varies wall position, route orientation, and
+change timing across 100 seeded trials. It removes a gate after observation
+while it is outside the 3×3 sensor window. Local observations also have a 2%
+occupancy-flip rate. The static-belief ablation retains every past obstacle
+indefinitely. The adaptive model learns an exponential change rate, shortens
+its stale horizon in volatile scenes, expires obsolete cells, and lowers
+confidence as volatility rises. OctoIR flag `4` marks elevated world-model
+volatility.
+
+| Belief policy | Trials | Success | Steps | Collisions | Expired cells | Peak volatility |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| persistent static belief | 100 | 58% | 18.83 | 0.260 | 0.00 | 0.079 |
+| adaptive dynamic belief | 100 | 96% | 17.96 | 0.040 | 27.72 | 0.062 |
+
+This is still a controlled disappearing-gate task, not a general learned
+physics model. It establishes that age- and volatility-aware belief revision is
+materially better than permanent memory under change and sensor drift.
